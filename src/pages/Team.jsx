@@ -1,6 +1,14 @@
 
 import { useCallback, useEffect, useState } from "react";
-import { Mail, Plus, Trash2, Users, X } from "lucide-react";
+import {
+  Check,
+  Mail,
+  Pencil,
+  Plus,
+  Trash2,
+  Users,
+  X,
+} from "lucide-react";
 import { supabase } from "../lib/supabase";
 
 export default function Team({ shop, user }) {
@@ -9,12 +17,15 @@ export default function Team({ shop, user }) {
   const [invitations, setInvitations] = useState([]);
   const [email, setEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("technician");
+  const [editingId, setEditingId] = useState(null);
+  const [editingName, setEditingName] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
   const canInvite = role === "owner" || role === "admin";
+  const isOwner = role === "owner";
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -38,7 +49,7 @@ export default function Team({ shop, user }) {
 
     const { data: people, error: peopleError } = await supabase
       .from("shop_members")
-      .select("user_id, role, created_at")
+      .select("user_id, role, created_at, display_name")
       .eq("shop_id", shop.id)
       .order("created_at");
 
@@ -73,14 +84,17 @@ export default function Team({ shop, user }) {
     setError("");
     setMessage("");
 
-    const { error } = await supabase.rpc("add_team_invitation", {
-      target_shop: shop.id,
-      member_email: email.trim().toLowerCase(),
-      member_role: inviteRole,
-    });
+    const { error: inviteError } = await supabase.rpc(
+      "add_team_invitation",
+      {
+        target_shop: shop.id,
+        member_email: email.trim().toLowerCase(),
+        member_role: inviteRole,
+      }
+    );
 
-    if (error) {
-      setError(error.message);
+    if (inviteError) {
+      setError(inviteError.message);
     } else {
       setEmail("");
       setMessage(
@@ -92,6 +106,42 @@ export default function Team({ shop, user }) {
     setBusy(false);
   }
 
+  async function saveName(event) {
+    event.preventDefault();
+    if (!editingId || busy) return;
+
+    setBusy(true);
+    setError("");
+    setMessage("");
+
+    const { error: saveError } = await supabase.rpc(
+      "set_team_member_name",
+      {
+        target_shop: shop.id,
+        target_user: editingId,
+        new_name: editingName.trim(),
+      }
+    );
+
+    if (saveError) {
+      setError(saveError.message);
+    } else {
+      setEditingId(null);
+      setEditingName("");
+      setMessage("Team member name updated.");
+      await load();
+    }
+
+    setBusy(false);
+  }
+
+  function startEditing(member) {
+    setEditingId(member.user_id);
+    setEditingName(member.display_name ?? "");
+    setError("");
+    setMessage("");
+  }
+
   async function cancel(invitationId) {
     if (!window.confirm("Cancel this invitation?")) return;
 
@@ -99,12 +149,14 @@ export default function Team({ shop, user }) {
     setError("");
     setMessage("");
 
-    const { error } = await supabase.rpc("cancel_team_invitation", {
-      target_invitation: invitationId,
-    });
+    const { error: cancelError } = await supabase.rpc(
+      "cancel_team_invitation",
+      { target_invitation: invitationId }
+    );
 
-    if (error) setError(error.message);
-    else {
+    if (cancelError) {
+      setError(cancelError.message);
+    } else {
       setMessage("Invitation canceled.");
       await load();
     }
@@ -119,13 +171,17 @@ export default function Team({ shop, user }) {
     setError("");
     setMessage("");
 
-    const { error } = await supabase.rpc("remove_team_member", {
-      target_shop: shop.id,
-      target_user: member.user_id,
-    });
+    const { error: removeError } = await supabase.rpc(
+      "remove_team_member",
+      {
+        target_shop: shop.id,
+        target_user: member.user_id,
+      }
+    );
 
-    if (error) setError(error.message);
-    else {
+    if (removeError) {
+      setError(removeError.message);
+    } else {
       setMessage("Team member removed.");
       await load();
     }
@@ -146,16 +202,26 @@ export default function Team({ shop, user }) {
         <Users size={28} />
       </div>
 
-      {error && <div className="form-message" role="alert">{error}</div>}
-      {message && <div className="form-message" role="status">{message}</div>}
+      {error && (
+        <div className="form-message" role="alert">
+          {error}
+        </div>
+      )}
+
+      {message && (
+        <div className="form-message" role="status">
+          {message}
+        </div>
+      )}
 
       {canInvite && (
         <section className="team-panel">
           <span className="eyebrow">INVITE YOUR CREW</span>
           <h2>Add a team member.</h2>
           <p>
-            Add their email here. Once they create and verify their
-            Moovio account, they'll automatically join your shop.
+            Add their email here. Once they create and verify
+            their Moovio account, they'll automatically join
+            your shop.
           </p>
 
           <form className="team-invite-form" onSubmit={invite}>
@@ -166,7 +232,9 @@ export default function Team({ shop, user }) {
                 required
                 value={email}
                 placeholder="employee@yourshop.com"
-                onChange={(event) => setEmail(event.target.value)}
+                onChange={(event) =>
+                  setEmail(event.target.value)
+                }
               />
             </label>
 
@@ -174,10 +242,12 @@ export default function Team({ shop, user }) {
               Role
               <select
                 value={inviteRole}
-                onChange={(event) => setInviteRole(event.target.value)}
+                onChange={(event) =>
+                  setInviteRole(event.target.value)
+                }
               >
                 <option value="technician">Technician</option>
-                {role === "owner" && (
+                {isOwner && (
                   <option value="admin">Admin</option>
                 )}
               </select>
@@ -206,7 +276,13 @@ export default function Team({ shop, user }) {
           const removable =
             !isMe &&
             member.role !== "owner" &&
-            (role === "owner" || member.role === "technician");
+            (isOwner || member.role === "technician");
+
+          const displayName =
+            member.display_name?.trim() ||
+            (isMe
+              ? user.email
+              : `Member ${member.user_id.slice(0, 8)}`);
 
           return (
             <div className="team-member" key={member.user_id}>
@@ -214,22 +290,87 @@ export default function Team({ shop, user }) {
                 <Users size={19} />
               </div>
 
-              <div className="team-member-copy">
-                <strong>
-                  {isMe
-                    ? `${user.email} (you)`
-                    : `Member ${member.user_id.slice(0, 8)}`}
-                </strong>
-                <small>{member.role.toUpperCase()}</small>
+              <div
+                className="team-member-copy"
+                style={{ minWidth: 0 }}
+              >
+                {editingId === member.user_id ? (
+                  <form
+                    onSubmit={saveName}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <input
+                      type="text"
+                      maxLength={80}
+                      autoFocus
+                      value={editingName}
+                      placeholder="Employee name"
+                      onChange={(event) =>
+                        setEditingName(event.target.value)
+                      }
+                      aria-label="Team member display name"
+                    />
+
+                    <button
+                      type="submit"
+                      className="primary-button"
+                      disabled={busy}
+                      aria-label="Save name"
+                    >
+                      <Check size={16} />
+                    </button>
+
+                    <button
+                      type="button"
+                      className="team-danger"
+                      disabled={busy}
+                      onClick={() => {
+                        setEditingId(null);
+                        setEditingName("");
+                      }}
+                      aria-label="Cancel editing"
+                    >
+                      <X size={16} />
+                    </button>
+                  </form>
+                ) : (
+                  <>
+                    <strong>
+                      {displayName}
+                      {isMe ? " (you)" : ""}
+                    </strong>
+                    <small>
+                      {member.role.toUpperCase()}
+                    </small>
+                  </>
+                )}
               </div>
 
-              {removable && (
+              {isOwner && editingId !== member.user_id && (
+                <button
+                  type="button"
+                  className="team-danger"
+                  disabled={busy}
+                  onClick={() => startEditing(member)}
+                  aria-label={`Edit name for ${displayName}`}
+                  title="Edit display name"
+                >
+                  <Pencil size={17} />
+                </button>
+              )}
+
+              {removable && editingId !== member.user_id && (
                 <button
                   className="team-danger"
                   type="button"
                   disabled={busy}
                   onClick={() => remove(member)}
-                  aria-label="Remove member"
+                  aria-label={`Remove ${displayName}`}
                 >
                   <Trash2 size={17} />
                 </button>

@@ -1,13 +1,15 @@
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ArrowLeft,
   Camera,
   Check,
   Clock3,
+  Pencil,
   Plus,
   Save,
   ShieldCheck,
+  X,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
@@ -22,46 +24,6 @@ const STAGES = [
   ["delivered", "Delivered"],
 ];
 
-const BUCKET = "repair-photos";
-const MAX_PHOTO_SIZE = 10 * 1024 * 1024;
-
-const SUPPORTED_TYPES = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-};
-
-function getErrorMessage(error, action) {
-  const detail = error?.message || "Unknown error";
-  const code = error?.code || error?.statusCode || error?.status;
-  const prefix = code ? `[${code}] ` : "";
-
-  if (
-    code === "42501" ||
-    /row.level security|permission denied|not authorized|unauthorized/i.test(
-      detail
-    )
-  ) {
-    return `${action}: ${prefix}${detail}. Check the Supabase RLS or Storage policies for this shop.`;
-  }
-
-  if (/bucket not found/i.test(detail)) {
-    return `${action}: The private "${BUCKET}" Storage bucket does not exist.`;
-  }
-
-  return `${action}: ${prefix}${detail}`;
-}
-
-function formatDate(value) {
-  if (!value) return "Unknown date";
-
-  const date = new Date(value);
-
-  return Number.isNaN(date.getTime())
-    ? "Unknown date"
-    : date.toLocaleString();
-}
-
 export default function RepairDetails({
   job,
   shop,
@@ -72,168 +34,115 @@ export default function RepairDetails({
   const [description, setDescription] = useState(
     job.description ?? ""
   );
-  const [status, setStatus] = useState(
-    job.status ?? "checked_in"
-  );
+  const [status, setStatus] = useState(job.status);
   const [completion, setCompletion] = useState(
-    job.estimated_completion
-      ? String(job.estimated_completion).slice(0, 10)
-      : ""
+    job.estimated_completion ?? ""
   );
 
   const [updates, setUpdates] = useState([]);
   const [photos, setPhotos] = useState([]);
   const [photoUrls, setPhotoUrls] = useState({});
-  const [loading, setLoading] = useState(true);
 
   const [note, setNote] = useState("");
   const [notePublic, setNotePublic] = useState(false);
   const [photoPublic, setPhotoPublic] = useState(false);
 
-  const [savingRepair, setSavingRepair] = useState(false);
-  const [savingUpdate, setSavingUpdate] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [role, setRole] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editingBody, setEditingBody] = useState("");
+  const [editingPublic, setEditingPublic] = useState(false);
 
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  const mountedRef = useRef(true);
-  const loadIdRef = useRef(0);
-
-  const busy = savingRepair || savingUpdate || uploading;
-
-  useEffect(() => {
-    mountedRef.current = true;
-
-    return () => {
-      mountedRef.current = false;
-      loadIdRef.current += 1;
-    };
-  }, []);
-
-  useEffect(() => {
-    setDescription(job.description ?? "");
-    setStatus(job.status ?? "checked_in");
-    setCompletion(
-      job.estimated_completion
-        ? String(job.estimated_completion).slice(0, 10)
-        : ""
-    );
-  }, [job.id]);
+  const isManager = role === "owner" || role === "admin";
 
   const load = useCallback(async () => {
-    const loadId = ++loadIdRef.current;
+    const [updatesResult, photosResult] = await Promise.all([
+      supabase
+        .from("repair_updates")
+        .select("*")
+        .eq("job_id", job.id)
+        .eq("shop_id", shop.id)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("repair_photos")
+        .select("*")
+        .eq("job_id", job.id)
+        .eq("shop_id", shop.id)
+        .order("created_at", { ascending: false }),
+    ]);
 
-    if (mountedRef.current) {
-      setLoading(true);
+    if (updatesResult.error || photosResult.error) {
+      throw new Error(
+        updatesResult.error?.message ??
+          photosResult.error?.message
+      );
     }
 
-    try {
-      const [updatesResult, photosResult] = await Promise.all([
-        supabase
-          .from("repair_updates")
-          .select("*")
-          .eq("job_id", job.id)
-          .eq("shop_id", shop.id)
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("repair_photos")
-          .select("*")
-          .eq("job_id", job.id)
-          .eq("shop_id", shop.id)
-          .order("created_at", { ascending: false }),
-      ]);
+    setUpdates(updatesResult.data ?? []);
+    setPhotos(photosResult.data ?? []);
 
-      if (updatesResult.error) {
-        throw new Error(
-          getErrorMessage(
-            updatesResult.error,
-            "Loading progress updates"
-          )
-        );
-      }
+    const nextUrls = {};
 
-      if (photosResult.error) {
-        throw new Error(
-          getErrorMessage(
-            photosResult.error,
-            "Loading repair photos"
-          )
-        );
-      }
+    await Promise.all(
+      (photosResult.data ?? []).map(async (photo) => {
+        const { data, error: urlError } =
+          await supabase.storage
+            .from("repair-photos")
+            .createSignedUrl(photo.storage_path, 3600);
 
-      const nextUpdates = updatesResult.data ?? [];
-      const nextPhotos = photosResult.data ?? [];
-
-      const signedResults = await Promise.all(
-        nextPhotos.map(async (photo) => {
-          const { data, error: signedError } =
-            await supabase.storage
-              .from(BUCKET)
-              .createSignedUrl(photo.storage_path, 3600);
-
-          return {
-            id: photo.id,
-            url: data?.signedUrl ?? null,
-            error: signedError,
-          };
-        })
-      );
-
-      if (!mountedRef.current || loadId !== loadIdRef.current) {
-        return;
-      }
-
-      const nextUrls = {};
-
-      for (const result of signedResults) {
-        if (result.url) {
-          nextUrls[result.id] = result.url;
+        if (!urlError && data?.signedUrl) {
+          nextUrls[photo.id] = data.signedUrl;
         }
-      }
+      })
+    );
 
-      setUpdates(nextUpdates);
-      setPhotos(nextPhotos);
-      setPhotoUrls(nextUrls);
-
-      const failedPreviews = signedResults.filter(
-        (result) => !result.url
-      );
-
-      if (failedPreviews.length) {
-        setError(
-          `${failedPreviews.length} photo preview(s) could not be loaded. Check Storage SELECT permissions for shop members.`
-        );
-      }
-    } catch (err) {
-      if (mountedRef.current && loadId === loadIdRef.current) {
-        setError(err.message || "Unable to load repair details.");
-      }
-    } finally {
-      if (mountedRef.current && loadId === loadIdRef.current) {
-        setLoading(false);
-      }
-    }
+    setPhotoUrls(nextUrls);
   }, [job.id, shop.id]);
 
   useEffect(() => {
+    let active = true;
+
+    async function initialize() {
+      const { data, error: roleError } = await supabase
+        .from("shop_members")
+        .select("role")
+        .eq("shop_id", shop.id)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (active) {
+        if (roleError) setError(roleError.message);
+        else setRole(data?.role ?? "");
+      }
+
+      try {
+        await load();
+      } catch (err) {
+        if (active) setError(err.message);
+      }
+    }
+
+    initialize();
+
+    return () => {
+      active = false;
+    };
+  }, [load, shop.id, user.id]);
+
+  function clearFeedback() {
     setError("");
     setMessage("");
-    setUpdates([]);
-    setPhotos([]);
-    setPhotoUrls({});
-
-    load();
-  }, [load]);
+  }
 
   async function saveRepair(event) {
     event.preventDefault();
-
     if (busy) return;
 
-    setSavingRepair(true);
-    setError("");
-    setMessage("");
+    setBusy(true);
+    clearFeedback();
 
     try {
       const { data, error: saveError } = await supabase
@@ -248,227 +157,217 @@ export default function RepairDetails({
         .select("*")
         .single();
 
-      if (saveError) {
-        throw new Error(
-          getErrorMessage(saveError, "Saving repair")
-        );
-      }
+      if (saveError) throw saveError;
 
-      if (!data) {
-        throw new Error(
-          "Supabase did not return the saved repair. Check UPDATE and SELECT permissions."
-        );
-      }
-
+      setMessage("Repair saved.");
       onUpdated?.(data);
-      setMessage("Repair saved successfully.");
     } catch (err) {
-      setError(err.message || "Could not save repair.");
+      setError(err.message);
     } finally {
-      setSavingRepair(false);
+      setBusy(false);
     }
   }
 
   async function addUpdate(event) {
     event.preventDefault();
+    if (busy || !note.trim()) return;
 
-    const body = note.trim();
-
-    if (!body || busy) return;
-
-    setSavingUpdate(true);
-    setError("");
-    setMessage("");
+    setBusy(true);
+    clearFeedback();
 
     try {
-      const { data, error: insertError } = await supabase
+      const { error: insertError } = await supabase
         .from("repair_updates")
         .insert({
           job_id: job.id,
           shop_id: shop.id,
           author_id: user.id,
-          body,
+          body: note.trim(),
           customer_visible: notePublic,
-        })
-        .select("*")
-        .single();
+        });
 
-      if (insertError) {
-        throw new Error(
-          getErrorMessage(
-            insertError,
-            "Saving progress update"
-          )
-        );
-      }
-
-      if (!data) {
-        throw new Error(
-          "The update was not returned by Supabase. Check INSERT and SELECT permissions."
-        );
-      }
-
-      setUpdates((previous) => [
-        data,
-        ...previous.filter((item) => item.id !== data.id),
-      ]);
+      if (insertError) throw insertError;
 
       setNote("");
       setNotePublic(false);
 
-      setMessage(
-        data.customer_visible
-          ? "Progress update saved and marked customer-visible."
-          : "Private progress update saved."
-      );
-
       await load();
+      setMessage("Progress update added.");
     } catch (err) {
-      setError(
-        err.message || "Could not save progress update."
-      );
+      setError(err.message);
     } finally {
-      setSavingUpdate(false);
+      setBusy(false);
+    }
+  }
+
+  function startEditing(update) {
+    clearFeedback();
+    setEditingId(update.id);
+    setEditingBody(update.body);
+    setEditingPublic(update.customer_visible);
+  }
+
+  function cancelEditing() {
+    setEditingId(null);
+    setEditingBody("");
+    setEditingPublic(false);
+  }
+
+  async function saveUpdate(event) {
+    event.preventDefault();
+
+    if (busy || !editingId || !editingBody.trim()) return;
+
+    setBusy(true);
+    clearFeedback();
+
+    try {
+      const { data, error: updateError } = await supabase
+        .from("repair_updates")
+        .update({
+          body: editingBody.trim(),
+          customer_visible: editingPublic,
+        })
+        .eq("id", editingId)
+        .eq("job_id", job.id)
+        .eq("shop_id", shop.id)
+        .select("id")
+        .single();
+
+      if (updateError) throw updateError;
+      if (!data) throw new Error("Update was not saved.");
+
+      cancelEditing();
+      await load();
+      setMessage("Progress update saved.");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
     }
   }
 
   async function uploadPhotos(event) {
-    const selectedFiles = Array.from(
-      event.target.files ?? []
-    );
-
+    const files = Array.from(event.target.files ?? []);
     event.target.value = "";
 
-    if (!selectedFiles.length || busy) return;
+    if (!files.length || busy) return;
 
-    setUploading(true);
-    setError("");
-    setMessage("");
-
-    let uploadedCount = 0;
-    const failures = [];
-    const visibility = photoPublic;
+    setBusy(true);
+    clearFeedback();
 
     try {
-      for (const file of selectedFiles) {
-        const extension = SUPPORTED_TYPES[file.type];
-
-        if (!extension) {
-          failures.push(
-            `${file.name}: Only JPG, PNG, and WebP files are supported.`
+      for (const file of files) {
+        if (
+          !["image/jpeg", "image/png", "image/webp"].includes(
+            file.type
+          )
+        ) {
+          throw new Error(
+            "Only JPG, PNG, and WebP images are supported."
           );
-          continue;
         }
 
-        if (file.size > MAX_PHOTO_SIZE) {
-          failures.push(
-            `${file.name}: Photo exceeds the 10 MB limit.`
-          );
-          continue;
+        if (file.size > 10 * 1024 * 1024) {
+          throw new Error("Each photo must be under 10 MB.");
         }
 
-        const storagePath =
-          `${shop.id}/${job.id}/${crypto.randomUUID()}.${extension}`;
+        const extension = {
+          "image/jpeg": "jpg",
+          "image/png": "png",
+          "image/webp": "webp",
+        }[file.type];
 
-        try {
-          const { error: uploadError } =
-            await supabase.storage
-              .from(BUCKET)
-              .upload(storagePath, file, {
-                contentType: file.type,
-                upsert: false,
-                cacheControl: "3600",
-              });
+        const path =
+          `${shop.id}/${job.id}/` +
+          `${crypto.randomUUID()}.${extension}`;
 
-          if (uploadError) {
-            throw new Error(
-              getErrorMessage(
-                uploadError,
-                `Uploading ${file.name} to Storage`
-              )
-            );
-          }
+        const { error: uploadError } = await supabase.storage
+          .from("repair-photos")
+          .upload(path, file, {
+            contentType: file.type,
+            upsert: false,
+          });
 
-          const { data: photoRecord, error: dbError } =
-            await supabase
-              .from("repair_photos")
-              .insert({
-                shop_id: shop.id,
-                job_id: job.id,
-                uploaded_by: user.id,
-                storage_path: storagePath,
-                customer_visible: visibility,
-              })
-              .select("*")
-              .single();
+        if (uploadError) throw uploadError;
 
-          if (dbError || !photoRecord) {
-            const { error: cleanupError } =
-              await supabase.storage
-                .from(BUCKET)
-                .remove([storagePath]);
+        const { error: dbError } = await supabase
+          .from("repair_photos")
+          .insert({
+            shop_id: shop.id,
+            job_id: job.id,
+            uploaded_by: user.id,
+            storage_path: path,
+            customer_visible: photoPublic,
+          });
 
-            const cleanupMessage = cleanupError
-              ? " The uploaded Storage object may need manual cleanup."
-              : "";
+        if (dbError) {
+          await supabase.storage
+            .from("repair-photos")
+            .remove([path]);
 
-            throw new Error(
-              (dbError
-                ? getErrorMessage(
-                    dbError,
-                    `Saving ${file.name} photo record`
-                  )
-                : `Saving ${file.name}: Supabase did not return the photo record.`) +
-                cleanupMessage
-            );
-          }
-
-          uploadedCount += 1;
-
-          setPhotos((previous) => [
-            photoRecord,
-            ...previous.filter(
-              (item) => item.id !== photoRecord.id
-            ),
-          ]);
-
-          const { data: signedData } =
-            await supabase.storage
-              .from(BUCKET)
-              .createSignedUrl(storagePath, 3600);
-
-          if (signedData?.signedUrl) {
-            setPhotoUrls((previous) => ({
-              ...previous,
-              [photoRecord.id]: signedData.signedUrl,
-            }));
-          }
-        } catch (err) {
-          failures.push(
-            err.message || `${file.name}: Upload failed.`
-          );
+          throw dbError;
         }
       }
 
-      if (uploadedCount > 0) {
-        setMessage(
-          `${uploadedCount} photo${uploadedCount === 1 ? "" : "s"} saved successfully${visibility ? " and marked customer-visible" : " as private"}.`
-        );
+      setPhotoPublic(false);
+      await load();
+      setMessage("Photos uploaded.");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
-        setPhotoPublic(false);
-      }
+  async function deletePhoto(photo) {
+    if (!isManager || busy) return;
+
+    const confirmed = window.confirm(
+      "Permanently delete this repair photo? " +
+        "It will also disappear from customer tracking."
+    );
+
+    if (!confirmed) return;
+
+    setBusy(true);
+    clearFeedback();
+
+    try {
+      // Remove the database record first so the customer
+      // tracking RPC immediately stops returning this photo.
+      const { data, error: deleteError } = await supabase
+        .from("repair_photos")
+        .delete()
+        .eq("id", photo.id)
+        .eq("job_id", job.id)
+        .eq("shop_id", shop.id)
+        .select("id")
+        .single();
+
+      if (deleteError) throw deleteError;
+      if (!data) throw new Error("Photo was not deleted.");
+
+      // Delete the underlying private Storage object.
+      const { error: storageError } = await supabase.storage
+        .from("repair-photos")
+        .remove([photo.storage_path]);
 
       await load();
 
-      if (failures.length > 0) {
-        setError(failures.join("\n"));
+      if (storageError) {
+        setError(
+          "Photo removed from the repair, but its Storage " +
+            "file could not be deleted: " +
+            storageError.message
+        );
+      } else {
+        setMessage("Photo deleted.");
       }
     } catch (err) {
-      setError(
-        err.message || "Unexpected error uploading photos."
-      );
+      setError(err.message);
     } finally {
-      setUploading(false);
+      setBusy(false);
     }
   }
 
@@ -495,25 +394,13 @@ export default function RepairDetails({
       </div>
 
       {error && (
-        <div
-          className="form-message"
-          role="alert"
-          style={{
-            marginBottom: 20,
-            whiteSpace: "pre-wrap",
-            overflowWrap: "anywhere",
-          }}
-        >
+        <div className="form-message" role="alert">
           {error}
         </div>
       )}
 
       {message && (
-        <div
-          className="form-message"
-          role="status"
-          style={{ marginBottom: 20 }}
-        >
+        <div className="form-message" role="status">
           {message}
         </div>
       )}
@@ -564,13 +451,9 @@ export default function RepairDetails({
             </label>
           </div>
 
-          <button
-            type="submit"
-            className="primary-button"
-            disabled={busy}
-          >
+          <button className="primary-button" disabled={busy}>
             <Save size={17} />
-            {savingRepair ? "Saving..." : "Save repair"}
+            Save repair
           </button>
         </form>
       </section>
@@ -578,16 +461,12 @@ export default function RepairDetails({
       <section className="repair-panel">
         <span className="eyebrow">VISUAL PROGRESS</span>
         <h2>Repair photos ({photos.length})</h2>
-        <p>
-          Upload damage, repair, and completion photos.
-          Private photos stay within the shop.
-        </p>
+        <p>Upload damage, repair, and completion photos.</p>
 
         <label className="repair-visibility">
           <input
             type="checkbox"
             checked={photoPublic}
-            disabled={busy}
             onChange={(event) =>
               setPhotoPublic(event.target.checked)
             }
@@ -595,15 +474,9 @@ export default function RepairDetails({
           Make new photos visible to the customer
         </label>
 
-        <label
-          className="repair-upload-button"
-          style={{
-            opacity: busy ? 0.6 : 1,
-            cursor: busy ? "wait" : "pointer",
-          }}
-        >
+        <label className="repair-upload-button">
           <Camera size={18} />
-          {uploading ? "Uploading photos..." : "Upload photos"}
+          {busy ? "Please wait..." : "Upload photos"}
           <input
             type="file"
             accept="image/jpeg,image/png,image/webp"
@@ -614,20 +487,41 @@ export default function RepairDetails({
           />
         </label>
 
-        {loading && (
-          <p>Loading repair photos...</p>
-        )}
-
-        {!loading && photos.length === 0 && (
-          <p>No repair photos uploaded yet.</p>
-        )}
-
         <div className="repair-photo-grid">
           {photos.map((photo) => (
             <div
               className="repair-photo-card"
               key={photo.id}
+              style={{ position: "relative" }}
             >
+              {isManager && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => deletePhoto(photo)}
+                  title="Delete photo"
+                  aria-label="Delete photo"
+                  style={{
+                    position: "absolute",
+                    top: 9,
+                    right: 9,
+                    zIndex: 2,
+                    width: 32,
+                    height: 32,
+                    borderRadius: "50%",
+                    border: "1px solid rgba(255,255,255,.25)",
+                    background: "rgba(0,0,0,.75)",
+                    color: "#fff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: busy ? "wait" : "pointer",
+                  }}
+                >
+                  <X size={17} />
+                </button>
+              )}
+
               {photoUrls[photo.id] ? (
                 <img
                   src={photoUrls[photo.id]}
@@ -636,7 +530,7 @@ export default function RepairDetails({
                 />
               ) : (
                 <div className="repair-photo-placeholder">
-                  Photo preview unavailable
+                  Photo unavailable
                 </div>
               )}
 
@@ -644,22 +538,19 @@ export default function RepairDetails({
                 <span>
                   {photo.customer_visible ? (
                     <>
-                      <Check size={14} />
-                      Customer-visible
+                      <Check size={14} /> Customer-visible
                     </>
                   ) : (
                     <>
-                      <ShieldCheck size={14} />
-                      Private
+                      <ShieldCheck size={14} /> Private
                     </>
                   )}
                 </span>
+
                 <small>
-                  {photo.created_at
-                    ? new Date(
-                        photo.created_at
-                      ).toLocaleDateString()
-                    : "Just uploaded"}
+                  {new Date(
+                    photo.created_at
+                  ).toLocaleDateString()}
                 </small>
               </div>
             </div>
@@ -670,10 +561,6 @@ export default function RepairDetails({
       <section className="repair-panel">
         <span className="eyebrow">WORK HISTORY</span>
         <h2>Progress updates.</h2>
-        <p>
-          Add an internal note or publish an update
-          to the customer's tracking page.
-        </p>
 
         <form className="form-stack" onSubmit={addUpdate}>
           <label>
@@ -681,8 +568,8 @@ export default function RepairDetails({
             <textarea
               rows={4}
               required
+              maxLength={5000}
               value={note}
-              disabled={busy}
               onChange={(event) =>
                 setNote(event.target.value)
               }
@@ -694,7 +581,6 @@ export default function RepairDetails({
             <input
               type="checkbox"
               checked={notePublic}
-              disabled={busy}
               onChange={(event) =>
                 setNotePublic(event.target.checked)
               }
@@ -702,45 +588,118 @@ export default function RepairDetails({
             Show this update on the customer's tracking page
           </label>
 
-          <button
-            type="submit"
-            className="primary-button"
-            disabled={busy || !note.trim()}
-          >
+          <button className="primary-button" disabled={busy}>
             <Plus size={18} />
-            {savingUpdate
-              ? "Saving update..."
-              : "Add progress update"}
+            Add progress update
           </button>
         </form>
 
         <div className="repair-update-list">
-          {loading && (
-            <p>Loading progress updates...</p>
-          )}
+          {updates.map((update) => {
+            const canEdit =
+              isManager || update.author_id === user.id;
 
-          {!loading &&
-            updates.map((update) => (
-              <div
-                className="repair-update"
-                key={update.id}
-              >
+            return (
+              <div className="repair-update" key={update.id}>
                 <div className="repair-update-heading">
                   <span>
                     <Clock3 size={15} />
-                    {formatDate(update.created_at)}
+                    {new Date(
+                      update.created_at
+                    ).toLocaleString()}
                   </span>
+
                   <span>
                     {update.customer_visible
                       ? "CUSTOMER-VISIBLE"
                       : "PRIVATE"}
                   </span>
                 </div>
-                <p>{update.body}</p>
-              </div>
-            ))}
 
-          {!loading && updates.length === 0 && (
+                {editingId === update.id ? (
+                  <form
+                    className="form-stack"
+                    onSubmit={saveUpdate}
+                    style={{ marginTop: 14 }}
+                  >
+                    <label>
+                      Edit update
+                      <textarea
+                        rows={4}
+                        required
+                        maxLength={5000}
+                        value={editingBody}
+                        onChange={(event) =>
+                          setEditingBody(event.target.value)
+                        }
+                      />
+                    </label>
+
+                    <label className="repair-visibility">
+                      <input
+                        type="checkbox"
+                        checked={editingPublic}
+                        onChange={(event) =>
+                          setEditingPublic(
+                            event.target.checked
+                          )
+                        }
+                      />
+                      Show this update to the customer
+                    </label>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 10,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <button
+                        className="primary-button"
+                        disabled={
+                          busy || !editingBody.trim()
+                        }
+                      >
+                        <Save size={16} />
+                        Save changes
+                      </button>
+
+                      <button
+                        type="button"
+                        className="text-button"
+                        disabled={busy}
+                        onClick={cancelEditing}
+                      >
+                        <X size={16} />
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    <p>{update.body}</p>
+
+                    {canEdit && (
+                      <button
+                        type="button"
+                        className="text-button"
+                        disabled={busy}
+                        onClick={() =>
+                          startEditing(update)
+                        }
+                      >
+                        <Pencil size={15} />
+                        Edit update
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })}
+
+          {updates.length === 0 && (
             <p>No progress updates yet.</p>
           )}
         </div>
