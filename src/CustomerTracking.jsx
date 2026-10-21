@@ -1,5 +1,11 @@
+
 import { useEffect, useState } from "react";
-import { ArrowLeft, CarFront, Clock3, ShieldCheck } from "lucide-react";
+import {
+  CarFront,
+  Clock3,
+  ShieldCheck,
+  Camera,
+} from "lucide-react";
 import { supabase } from "./lib/supabase";
 import "./CustomerTracking.css";
 
@@ -13,6 +19,49 @@ const stages = [
   ["ready", "Ready for pickup"],
   ["delivered", "Delivered"],
 ];
+
+function CustomerPhoto({ photo, token }) {
+  const [url, setUrl] = useState("");
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadPhoto() {
+      const { data, error } = await supabase.functions.invoke(
+        "customer-photo",
+        {
+          body: {
+            token,
+            photoId: photo.id,
+          },
+        }
+      );
+
+      if (active && !error && data?.url) {
+        setUrl(data.url);
+      }
+    }
+
+    loadPhoto();
+
+    return () => {
+      active = false;
+    };
+  }, [photo.id, token]);
+
+  if (!url) return null;
+
+  return (
+    <div className="customer-photo">
+      <img
+        src={url}
+        alt={photo.caption || "Vehicle repair progress"}
+        loading="lazy"
+      />
+      {photo.caption && <p>{photo.caption}</p>}
+    </div>
+  );
+}
 
 export default function CustomerTracking({ token }) {
   const [repair, setRepair] = useState(null);
@@ -30,16 +79,21 @@ export default function CustomerTracking({ token }) {
 
       if (!active) return;
 
-      if (error) setError("Unable to load your repair right now.");
-      else if (!data?.length) setError("This tracking link is invalid or has expired.");
-      else setRepair(data[0]);
+      if (error) {
+        setError("Unable to load your repair right now.");
+        setRepair(null);
+      } else if (!data?.length) {
+        setError("This tracking link is invalid or has expired.");
+        setRepair(null);
+      } else {
+        setRepair(data[0]);
+        setError("");
+      }
 
       setLoading(false);
     }
 
     load();
-
-    // Refresh published information once a minute.
     const timer = setInterval(load, 60000);
 
     return () => {
@@ -49,12 +103,15 @@ export default function CustomerTracking({ token }) {
   }, [token]);
 
   const index = repair
-    ? stages.findIndex(([key]) => key === repair.repair_status)
+    ? stages.findIndex(
+        ([key]) => key === repair.repair_status
+      )
     : -1;
 
-  const progress = index >= 0
-    ? Math.round(((index + 1) / stages.length) * 100)
-    : 0;
+  const progress =
+    index >= 0
+      ? Math.round(((index + 1) / stages.length) * 100)
+      : 0;
 
   return (
     <div className="customer-page">
@@ -63,14 +120,18 @@ export default function CustomerTracking({ token }) {
           <span className="customer-brand-mark">m</span>
           moovio<span>.</span>
         </div>
+
         <div className="customer-header-label">
-          <ShieldCheck size={15} /> PRIVATE REPAIR TRACKING
+          <ShieldCheck size={15} />
+          PRIVATE REPAIR TRACKING
         </div>
       </header>
 
       <main className="customer-main">
         {loading ? (
-          <div className="customer-message">Loading your repair...</div>
+          <div className="customer-message">
+            Loading your repair...
+          </div>
         ) : error ? (
           <div className="customer-message">
             <h1>Link unavailable.</h1>
@@ -79,9 +140,18 @@ export default function CustomerTracking({ token }) {
         ) : (
           <>
             <div className="customer-intro">
-              <span className="customer-eyebrow">YOUR VEHICLE. YOUR UPDATES.</span>
-              <h1>You're in<br /><em>the loop.</em></h1>
-              <p>Follow your vehicle's repair progress, without making a call.</p>
+              <span className="customer-eyebrow">
+                YOUR VEHICLE. YOUR UPDATES.
+              </span>
+              <h1>
+                You're in
+                <br />
+                <em>the loop.</em>
+              </h1>
+              <p>
+                Follow your vehicle's repair progress,
+                without making a call.
+              </p>
             </div>
 
             <section className="customer-card">
@@ -92,14 +162,19 @@ export default function CustomerTracking({ token }) {
 
               <h2>
                 {repair.vehicle_year} {repair.vehicle_make}
-                <br />{repair.vehicle_model}
+                <br />
+                {repair.vehicle_model}
               </h2>
 
-              <p>Being taken care of by {repair.shop_name}</p>
+              <p>
+                Being taken care of by {repair.shop_name}
+              </p>
 
               <div className="customer-progress-heading">
                 <span>REPAIR PROGRESS</span>
-                <strong>{stages[index]?.[1] ?? "Updating"}</strong>
+                <strong>
+                  {stages[index]?.[1] ?? "Updating"}
+                </strong>
               </div>
 
               <div
@@ -123,7 +198,9 @@ export default function CustomerTracking({ token }) {
                   >
                     <span className="customer-stage-dot" />
                     <span>{label}</span>
-                    {i === index && <small>CURRENT STAGE</small>}
+                    {i === index && (
+                      <small>CURRENT STAGE</small>
+                    )}
                   </div>
                 ))}
               </div>
@@ -134,26 +211,95 @@ export default function CustomerTracking({ token }) {
                   <span>Estimated completion</span>
                   <strong>
                     {repair.estimated_completion
-                      ? new Date(`${repair.estimated_completion}T12:00:00`)
-                          .toLocaleDateString(undefined, {
-                            month: "long", day: "numeric", year: "numeric"
-                          })
+                      ? new Date(
+                          `${repair.estimated_completion}T12:00:00`
+                        ).toLocaleDateString(undefined, {
+                          month: "long",
+                          day: "numeric",
+                          year: "numeric",
+                        })
                       : "To be determined"}
                   </strong>
                 </div>
+
                 <div>
                   <ShieldCheck size={19} />
                   <span>Last updated</span>
                   <strong>
-                    {new Date(repair.last_updated).toLocaleString()}
+                    {new Date(
+                      repair.last_updated
+                    ).toLocaleString()}
                   </strong>
                 </div>
               </div>
+
+              {repair.description && (
+                <div className="customer-extra-section">
+                  <span className="customer-eyebrow">
+                    REPAIR DETAILS
+                  </span>
+                  <h3>What's being repaired.</h3>
+                  <p>{repair.description}</p>
+                </div>
+              )}
+
+              {repair.photos?.length > 0 && (
+                <div className="customer-extra-section">
+                  <span className="customer-eyebrow">
+                    FROM THE SHOP
+                  </span>
+                  <h3>
+                    <Camera size={22} />
+                    Repair photos.
+                  </h3>
+
+                  <div className="customer-photo-grid">
+                    {repair.photos.map((photo) => (
+                      <CustomerPhoto
+                        key={photo.id}
+                        photo={photo}
+                        token={token}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {repair.updates?.length > 0 && (
+                <div className="customer-extra-section">
+                  <span className="customer-eyebrow">
+                    REPAIR JOURNAL
+                  </span>
+                  <h3>Latest updates.</h3>
+
+                  <div className="customer-updates">
+                    {repair.updates.map((update) => (
+                      <div
+                        className="customer-update"
+                        key={update.id}
+                      >
+                        <small>
+                          {new Date(
+                            update.created_at
+                          ).toLocaleDateString()}
+                        </small>
+                        <p>{update.body}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </section>
 
             <div className="customer-disclaimer">
-              <p>Repair timelines are estimates and may change as work progresses.</p>
-              <p>Questions about your vehicle? Contact {repair.shop_name} directly.</p>
+              <p>
+                Repair timelines are estimates and may change
+                as work progresses.
+              </p>
+              <p>
+                Questions about your vehicle? Contact{" "}
+                {repair.shop_name} directly.
+              </p>
             </div>
           </>
         )}

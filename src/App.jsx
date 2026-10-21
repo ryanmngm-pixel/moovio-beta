@@ -1,39 +1,27 @@
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   ArrowUpRight,
   CarFront,
   Check,
-  ChevronDown,
   CirclePlus,
-  Clock3,
   Copy,
   ExternalLink,
   Link2,
-  LoaderCircle,
   LogOut,
   Plus,
-  Search,
-  ShieldCheck,
   Trash2,
+  Users,
   Wrench,
   X,
 } from "lucide-react";
 import { supabase } from "./lib/supabase";
 import CustomerTracking from "./CustomerTracking";
+import Dashboard from "./pages/Dashboard";
+import RepairDetails from "./pages/RepairDetails";
+import Team from "./pages/Team";
 import "./App.css";
-
-const STAGES = [
-  ["checked_in", "Checked in"],
-  ["estimating", "Estimating"],
-  ["waiting_parts", "Waiting on parts"],
-  ["in_repair", "In repair"],
-  ["paint", "Paint"],
-  ["quality_check", "Quality check"],
-  ["ready", "Ready for pickup"],
-  ["delivered", "Delivered"],
-];
 
 const EMPTY_JOB = {
   customer_name: "",
@@ -43,9 +31,6 @@ const EMPTY_JOB = {
   description: "",
   estimated_completion: "",
 };
-
-const stageName = (status) =>
-  STAGES.find(([key]) => key === status)?.[1] ?? status;
 
 function Brand() {
   return (
@@ -62,38 +47,54 @@ function Brand() {
 
 function AuthScreen({ onSession }) {
   const [mode, setMode] = useState("login");
+  const [teamSignup, setTeamSignup] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+
+  function switchMode(nextMode, isTeam = false) {
+    setMode(nextMode);
+    setTeamSignup(isTeam);
+    setMessage("");
+  }
 
   async function submit(event) {
     event.preventDefault();
     setBusy(true);
     setMessage("");
 
-    const result =
-      mode === "login"
-        ? await supabase.auth.signInWithPassword({
-            email,
-            password,
-          })
-        : await supabase.auth.signUp({
-            email,
-            password,
-          });
+    const address = email.trim().toLowerCase();
 
-    if (result.error) {
-      setMessage(result.error.message);
-    } else if (mode === "signup" && !result.data.session) {
-      setMessage(
-        "Account created! Check your email to confirm your account."
-      );
-    } else if (result.data.session) {
-      onSession(result.data.session);
+    try {
+      const result =
+        mode === "login"
+          ? await supabase.auth.signInWithPassword({
+              email: address,
+              password,
+            })
+          : await supabase.auth.signUp({
+              email: address,
+              password,
+              options: {
+                emailRedirectTo: window.location.origin,
+              },
+            });
+
+      if (result.error) {
+        setMessage(result.error.message);
+      } else if (result.data.session) {
+        onSession(result.data.session);
+      } else {
+        setMessage(
+          "Check your email to verify your account, then sign in."
+        );
+      }
+    } catch (error) {
+      setMessage(error.message || "Something went wrong.");
+    } finally {
+      setBusy(false);
     }
-
-    setBusy(false);
   }
 
   return (
@@ -102,7 +103,10 @@ function AuthScreen({ onSession }) {
         <Brand />
 
         <div className="auth-headline">
-          <span className="eyebrow">THE SHOP, IN MOTION.</span>
+          <span className="eyebrow">
+            THE SHOP, IN MOTION.
+          </span>
+
           <h1>
             LESS
             <br />
@@ -112,6 +116,7 @@ function AuthScreen({ onSession }) {
             <br />
             MOOVING.
           </h1>
+
           <p>
             Repair updates without the back-and-forth.
             Built for the people who keep cars moving.
@@ -134,30 +139,41 @@ function AuthScreen({ onSession }) {
           <h2>
             {mode === "login"
               ? "Welcome back."
+              : teamSignup
+              ? "Join your team."
               : "Let's get moving."}
           </h2>
 
           <p className="subtle">
             {mode === "login"
               ? "Sign in to your shop workspace."
+              : teamSignup
+              ? "Use the email your shop invited."
               : "Create your account to start managing repairs."}
           </p>
 
-          <form onSubmit={submit} className="form-stack">
+          <form
+            className="form-stack"
+            onSubmit={submit}
+          >
             <label>
               Email address
+
               <input
                 type="email"
                 required
                 autoComplete="email"
                 placeholder="you@yourshop.com"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(event) =>
+                  setEmail(event.target.value)
+                }
               />
             </label>
 
             <label>
               Password
+
               <input
                 type="password"
                 required
@@ -169,48 +185,121 @@ function AuthScreen({ onSession }) {
                 }
                 placeholder="At least 6 characters"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(event) =>
+                  setPassword(event.target.value)
+                }
               />
             </label>
 
             {message && (
-              <div className="form-message" role="status">
+              <div
+                className="form-message"
+                role="status"
+              >
                 {message}
               </div>
             )}
 
-            <button className="primary-button" disabled={busy}>
+            <button
+              type="submit"
+              className="primary-button"
+              disabled={busy}
+            >
               {busy
                 ? "Please wait..."
                 : mode === "login"
                 ? "Sign in"
                 : "Create account"}
+
               <ArrowRight size={18} />
             </button>
           </form>
 
-          <button
-            className="text-button"
-            onClick={() => {
-              setMode(mode === "login" ? "signup" : "login");
-              setMessage("");
+          <div
+            className="auth-account-links"
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "14px",
+              width: "100%",
+              marginTop: "22px",
             }}
           >
-            {mode === "login"
-              ? "New to Moovio? Create an account"
-              : "Already have an account? Sign in"}
-          </button>
+            <button
+              type="button"
+              className="text-button"
+              style={{
+                display: "block",
+                width: "fit-content",
+                margin: 0,
+                padding: "4px 0",
+                textAlign: "center",
+                lineHeight: 1.5,
+              }}
+              onClick={() =>
+                switchMode(
+                  mode === "login"
+                    ? "signup"
+                    : "login"
+                )
+              }
+            >
+              {mode === "login"
+                ? "New to Moovio? Create an account"
+                : "Already have an account? Sign in"}
+            </button>
+
+            {!(teamSignup && mode === "signup") && (
+              <button
+                type="button"
+                className="text-button team-signup-link"
+                style={{
+                  display: "block",
+                  width: "fit-content",
+                  margin: 0,
+                  padding: "4px 0",
+                  textAlign: "center",
+                  lineHeight: 1.5,
+                }}
+                onClick={() =>
+                  switchMode("signup", true)
+                }
+              >
+                Are you a team member?
+              </button>
+            )}
+          </div>
+
+          {teamSignup && mode === "signup" && (
+            <p
+              className="team-auth-hint"
+              style={{
+                marginTop: "18px",
+                textAlign: "center",
+                lineHeight: 1.7,
+              }}
+            >
+              Use the email your shop added.
+              Verify it before joining.
+            </p>
+          )}
         </div>
 
         <span className="auth-footnote">
-          MOOVIO © {new Date().getFullYear()} — MADE TO MOVE.
+          MOOVIO © {new Date().getFullYear()} —
+          MADE TO MOVE.
         </span>
       </div>
     </div>
   );
 }
 
-function Onboarding({ onCreated }) {
+function Onboarding({
+  onCreated,
+  onSignOut,
+  invitationError,
+}) {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -220,17 +309,22 @@ function Onboarding({ onCreated }) {
     setBusy(true);
     setError("");
 
-    const { error } = await supabase.rpc("create_shop", {
-      shop_name: name.trim(),
-    });
+    try {
+      const { error } = await supabase.rpc(
+        "create_shop",
+        {
+          shop_name: name.trim(),
+        }
+      );
 
-    if (error) {
-      setError(error.message);
-    } else {
+      if (error) throw error;
+
       await onCreated();
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setBusy(false);
     }
-
-    setBusy(false);
   }
 
   return (
@@ -238,7 +332,9 @@ function Onboarding({ onCreated }) {
       <Brand />
 
       <div className="onboarding-card">
-        <span className="eyebrow">01 / YOUR WORKSPACE</span>
+        <span className="eyebrow">
+          01 / YOUR WORKSPACE
+        </span>
 
         <h1>
           EVERY GREAT
@@ -248,28 +344,67 @@ function Onboarding({ onCreated }) {
           <em>SOMEWHERE.</em>
         </h1>
 
-        <p>First things first. What do you call your shop?</p>
+        <p>
+          First things first.
+          What do you call your shop?
+        </p>
 
-        <form onSubmit={submit} className="form-stack">
+        {invitationError && (
+          <div
+            className="form-message"
+            role="alert"
+          >
+            Team invitation: {invitationError}
+          </div>
+        )}
+
+        <form
+          onSubmit={submit}
+          className="form-stack"
+        >
           <label>
             Shop name
+
             <input
               required
               minLength={2}
               maxLength={120}
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(event) =>
+                setName(event.target.value)
+              }
               placeholder="e.g. Precision Auto Body"
             />
           </label>
 
-          {error && <div className="form-message">{error}</div>}
+          {error && (
+            <div
+              className="form-message"
+              role="alert"
+            >
+              {error}
+            </div>
+          )}
 
-          <button className="primary-button" disabled={busy}>
-            {busy ? "Creating..." : "Create my shop"}
+          <button
+            className="primary-button"
+            disabled={busy}
+          >
+            {busy
+              ? "Creating..."
+              : "Create my shop"}
+
             <ArrowRight size={18} />
           </button>
         </form>
+
+        <button
+          type="button"
+          className="text-button"
+          onClick={onSignOut}
+        >
+          Sign out
+        </button>
       </div>
     </div>
   );
@@ -285,10 +420,10 @@ function NewJobModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  function change(key, value) {
+  function change(field, value) {
     setForm((previous) => ({
       ...previous,
-      [key]: value,
+      [field]: value,
     }));
   }
 
@@ -297,31 +432,37 @@ function NewJobModal({
     setBusy(true);
     setError("");
 
-    const { data, error } = await supabase
-      .from("repair_jobs")
-      .insert({
-        shop_id: shopId,
-        created_by: userId,
-        customer_name: form.customer_name.trim(),
-        vehicle_year: form.vehicle_year
-          ? Number(form.vehicle_year)
-          : null,
-        vehicle_make: form.vehicle_make.trim(),
-        vehicle_model: form.vehicle_model.trim(),
-        description: form.description.trim() || null,
-        estimated_completion:
-          form.estimated_completion || null,
-      })
-      .select()
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from("repair_jobs")
+        .insert({
+          shop_id: shopId,
+          created_by: userId,
+          customer_name:
+            form.customer_name.trim(),
+          vehicle_year: form.vehicle_year
+            ? Number(form.vehicle_year)
+            : null,
+          vehicle_make:
+            form.vehicle_make.trim(),
+          vehicle_model:
+            form.vehicle_model.trim(),
+          description:
+            form.description.trim() || null,
+          estimated_completion:
+            form.estimated_completion || null,
+        })
+        .select()
+        .single();
 
-    if (error) {
-      setError(error.message);
-    } else {
+      if (error) throw error;
+
       onCreated(data);
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setBusy(false);
     }
-
-    setBusy(false);
   }
 
   return (
@@ -341,11 +482,17 @@ function NewJobModal({
       >
         <div className="modal-top">
           <div>
-            <span className="eyebrow">NEW REPAIR / 001</span>
-            <h2 id="new-job-title">Add a vehicle.</h2>
+            <span className="eyebrow">
+              NEW REPAIR / 001
+            </span>
+
+            <h2 id="new-job-title">
+              Add a vehicle.
+            </h2>
           </div>
 
           <button
+            type="button"
             className="icon-button"
             onClick={onClose}
             aria-label="Close"
@@ -354,16 +501,23 @@ function NewJobModal({
           </button>
         </div>
 
-        <form onSubmit={submit} className="form-stack">
+        <form
+          onSubmit={submit}
+          className="form-stack"
+        >
           <label>
             Customer name
+
             <input
               required
               maxLength={120}
               placeholder="Customer's full name"
               value={form.customer_name}
-              onChange={(e) =>
-                change("customer_name", e.target.value)
+              onChange={(event) =>
+                change(
+                  "customer_name",
+                  event.target.value
+                )
               }
             />
           </label>
@@ -371,26 +525,34 @@ function NewJobModal({
           <div className="form-grid">
             <label>
               Year
+
               <input
                 type="number"
                 min="1900"
                 max="2100"
                 placeholder="2022"
                 value={form.vehicle_year}
-                onChange={(e) =>
-                  change("vehicle_year", e.target.value)
+                onChange={(event) =>
+                  change(
+                    "vehicle_year",
+                    event.target.value
+                  )
                 }
               />
             </label>
 
             <label>
               Make
+
               <input
                 required
                 placeholder="Honda"
                 value={form.vehicle_make}
-                onChange={(e) =>
-                  change("vehicle_make", e.target.value)
+                onChange={(event) =>
+                  change(
+                    "vehicle_make",
+                    event.target.value
+                  )
                 }
               />
             </label>
@@ -398,43 +560,68 @@ function NewJobModal({
 
           <label>
             Model
+
             <input
               required
               placeholder="Accord"
               value={form.vehicle_model}
-              onChange={(e) =>
-                change("vehicle_model", e.target.value)
+              onChange={(event) =>
+                change(
+                  "vehicle_model",
+                  event.target.value
+                )
               }
             />
           </label>
 
           <label>
-            Repair details
+            Repair description
+
             <textarea
-              rows={3}
-              placeholder="Describe the damage or repair..."
+              rows={4}
+              placeholder="Describe the damage and repairs..."
               value={form.description}
-              onChange={(e) =>
-                change("description", e.target.value)
+              onChange={(event) =>
+                change(
+                  "description",
+                  event.target.value
+                )
               }
             />
           </label>
 
           <label>
             Estimated completion
+
             <input
               type="date"
               value={form.estimated_completion}
-              onChange={(e) =>
-                change("estimated_completion", e.target.value)
+              onChange={(event) =>
+                change(
+                  "estimated_completion",
+                  event.target.value
+                )
               }
             />
           </label>
 
-          {error && <div className="form-message">{error}</div>}
+          {error && (
+            <div
+              className="form-message"
+              role="alert"
+            >
+              {error}
+            </div>
+          )}
 
-          <button className="primary-button" disabled={busy}>
-            {busy ? "Saving..." : "Create repair job"}
+          <button
+            className="primary-button"
+            disabled={busy}
+          >
+            {busy
+              ? "Saving..."
+              : "Create repair job"}
+
             <CirclePlus size={19} />
           </button>
         </form>
@@ -443,43 +630,65 @@ function NewJobModal({
   );
 }
 
-/*
- * TRACKING LINK MANAGER
- *
- * The database stores only hashed tokens.
- * A new raw token is returned once when created.
- * Existing links can be revoked, but their original
- * URLs cannot be recovered from the database.
- */
-
-function TrackingLinkModal({ job, onClose }) {
+function TrackingLinkModal({
+  job,
+  onClose,
+}) {
   const [links, setLinks] = useState([]);
   const [newUrl, setNewUrl] = useState("");
-  const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+
+  async function loadLinks() {
+    const { data, error } = await supabase
+      .from("repair_tracking_links")
+      .select(
+        "id, created_at, revoked_at, expires_at"
+      )
+      .eq("job_id", job.id)
+      .eq("shop_id", job.shop_id)
+      .order("created_at", {
+        ascending: false,
+      });
+
+    if (error) {
+      setError(error.message);
+    } else {
+      setLinks(data ?? []);
+    }
+
+    setLoading(false);
+  }
 
   useEffect(() => {
     let active = true;
 
-    async function loadLinks() {
+    async function initialLoad() {
       const { data, error } = await supabase
         .from("repair_tracking_links")
-        .select("id, created_at, revoked_at, expires_at")
+        .select(
+          "id, created_at, revoked_at, expires_at"
+        )
         .eq("job_id", job.id)
         .eq("shop_id", job.shop_id)
-        .order("created_at", { ascending: false });
+        .order("created_at", {
+          ascending: false,
+        });
 
       if (!active) return;
 
-      if (error) setError(error.message);
-      else setLinks(data ?? []);
+      if (error) {
+        setError(error.message);
+      } else {
+        setLinks(data ?? []);
+      }
 
       setLoading(false);
     }
 
-    loadLinks();
+    initialLoad();
 
     return () => {
       active = false;
@@ -491,91 +700,92 @@ function TrackingLinkModal({ job, onClose }) {
     setError("");
     setNotice("");
 
-    const { data: token, error } = await supabase.rpc(
-      "create_tracking_link",
-      { target_job: job.id }
-    );
+    try {
+      const { data: token, error } =
+        await supabase.rpc(
+          "create_tracking_link",
+          {
+            target_job: job.id,
+          }
+        );
 
-    if (error) {
+      if (error) throw error;
+
+      const url =
+        `${window.location.origin}/track/${token}`;
+
+      setNewUrl(url);
+      await loadLinks();
+    } catch (error) {
       setError(error.message);
+    } finally {
       setBusy(false);
-      return;
     }
-
-    const url = `${window.location.origin}/track/${token}`;
-    setNewUrl(url);
-
-    const { data: refreshed, error: refreshError } =
-      await supabase
-        .from("repair_tracking_links")
-        .select("id, created_at, revoked_at, expires_at")
-        .eq("job_id", job.id)
-        .eq("shop_id", job.shop_id)
-        .order("created_at", { ascending: false });
-
-    if (refreshError) {
-      setError(refreshError.message);
-    } else {
-      setLinks(refreshed ?? []);
-    }
-
-    setBusy(false);
   }
 
   async function copyLink() {
     try {
-      await navigator.clipboard.writeText(newUrl);
-      setNotice("Tracking link copied to clipboard.");
+      await navigator.clipboard.writeText(
+        newUrl
+      );
+
+      setNotice("Tracking link copied.");
     } catch {
-      setNotice("Select the link above to copy it manually.");
+      setNotice(
+        "Select the link to copy it manually."
+      );
     }
   }
 
   async function revokeLink(linkId) {
-    if (!window.confirm("Revoke this tracking link? It will stop working immediately.")) {
+    if (
+      !window.confirm(
+        "Revoke this tracking link?"
+      )
+    ) {
       return;
     }
 
     setBusy(true);
     setError("");
+    setNotice("");
 
-    const { error } = await supabase.rpc(
-      "revoke_tracking_link",
-      { target_link: linkId }
-    );
-
-    if (error) {
-      setError(error.message);
-    } else {
-      setLinks((previous) =>
-        previous.map((link) =>
-          link.id === linkId
-            ? { ...link, revoked_at: new Date().toISOString() }
-            : link
-        )
+    try {
+      const { error } = await supabase.rpc(
+        "revoke_tracking_link",
+        {
+          target_link: linkId,
+        }
       );
 
-      // The newest URL may correspond to the revoked link.
-      // Clear it so we don't encourage sharing a revoked link.
+      if (error) throw error;
+
       setNewUrl("");
       setNotice("Tracking link revoked.");
+      await loadLinks();
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setBusy(false);
     }
-
-    setBusy(false);
   }
 
-  const activeLinks = links.filter(
+  const activeCount = links.filter(
     (link) =>
       !link.revoked_at &&
       (!link.expires_at ||
-        new Date(link.expires_at).getTime() > Date.now())
-  );
+        new Date(
+          link.expires_at
+        ).getTime() > Date.now())
+  ).length;
 
   return (
     <div
       className="modal-backdrop"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
+        if (
+          event.target === event.currentTarget
+        ) {
           onClose();
         }
       }}
@@ -588,11 +798,17 @@ function TrackingLinkModal({ job, onClose }) {
       >
         <div className="modal-top">
           <div>
-            <span className="eyebrow">CUSTOMER ACCESS</span>
-            <h2 id="tracking-title">Tracking links.</h2>
+            <span className="eyebrow">
+              CUSTOMER ACCESS
+            </span>
+
+            <h2 id="tracking-title">
+              Tracking links.
+            </h2>
           </div>
 
           <button
+            type="button"
             className="icon-button"
             onClick={onClose}
             aria-label="Close"
@@ -616,23 +832,30 @@ function TrackingLinkModal({ job, onClose }) {
                 .filter(Boolean)
                 .join(" ")}
             </strong>
-            <small>{job.customer_name}</small>
+
+            <small>
+              {job.customer_name}
+            </small>
           </div>
         </div>
 
         <p className="tracking-explanation">
-          Create a private link that lets your customer see
-          this vehicle's repair progress without signing in.
-          The link does not grant access to your shop dashboard.
+          Create a private link for your
+          customer to follow their vehicle's
+          repair progress without signing in.
         </p>
 
         <button
+          type="button"
           className="primary-button tracking-create-button"
           onClick={createLink}
           disabled={busy}
         >
           <Plus size={18} />
-          {busy ? "Working..." : "Create new tracking link"}
+
+          {busy
+            ? "Working..."
+            : "Create new tracking link"}
         </button>
 
         {newUrl && (
@@ -643,19 +866,22 @@ function TrackingLinkModal({ job, onClose }) {
             </div>
 
             <p>
-              Copy this link now. For security, Moovio
-              cannot recover it later.
+              Copy this link now. For security,
+              Moovio cannot recover it later.
             </p>
 
             <input
               readOnly
               value={newUrl}
-              aria-label="New customer tracking URL"
-              onFocus={(e) => e.target.select()}
+              aria-label="New tracking link"
+              onFocus={(event) =>
+                event.target.select()
+              }
             />
 
             <div className="generated-actions">
               <button
+                type="button"
                 className="primary-button"
                 onClick={copyLink}
               >
@@ -677,13 +903,19 @@ function TrackingLinkModal({ job, onClose }) {
         )}
 
         {error && (
-          <div className="form-message" role="alert">
+          <div
+            className="form-message"
+            role="alert"
+          >
             {error}
           </div>
         )}
 
         {notice && (
-          <div className="form-message" role="status">
+          <div
+            className="form-message"
+            role="status"
+          >
             {notice}
           </div>
         )}
@@ -691,52 +923,81 @@ function TrackingLinkModal({ job, onClose }) {
         <div className="tracking-links-section">
           <div className="tracking-links-heading">
             <strong>Existing links</strong>
-            <span>{activeLinks.length} ACTIVE</span>
+            <span>
+              {activeCount} active
+            </span>
           </div>
 
           {loading ? (
-            <p className="tracking-empty">Loading links...</p>
+            <div className="tracking-empty">
+              Loading links...
+            </div>
           ) : links.length === 0 ? (
-            <p className="tracking-empty">
+            <div className="tracking-empty">
               No tracking links created yet.
-            </p>
+            </div>
           ) : (
             <div className="tracking-links-list">
               {links.map((link) => {
                 const expired =
                   link.expires_at &&
-                  new Date(link.expires_at).getTime() <= Date.now();
+                  new Date(
+                    link.expires_at
+                  ).getTime() <= Date.now();
 
-                const inactive = Boolean(link.revoked_at || expired);
+                const inactive = Boolean(
+                  link.revoked_at || expired
+                );
 
                 return (
-                  <div className="tracking-link-row" key={link.id}>
-                    <div className="tracking-link-info">
-                      <Link2 size={18} />
-                      <div>
-                        <strong>
-                          {inactive
-                            ? link.revoked_at
-                              ? "Revoked link"
-                              : "Expired link"
-                            : "Active customer link"}
-                        </strong>
-                        <small>
-                          Created{" "}
-                          {new Date(link.created_at).toLocaleDateString()}
-                        </small>
-                      </div>
+                  <div
+                    className="tracking-link-row"
+                    key={link.id}
+                  >
+                    <div className="tracking-link-icon">
+                      <Link2 size={17} />
                     </div>
+
+                    <div className="tracking-link-info">
+                      <strong>
+                        {inactive
+                          ? "Inactive link"
+                          : "Active link"}
+                      </strong>
+
+                      <small>
+                        Created{" "}
+                        {new Date(
+                          link.created_at
+                        ).toLocaleDateString()}
+                      </small>
+                    </div>
+
+                    <span
+                      className={
+                        inactive
+                          ? "tracking-status inactive"
+                          : "tracking-status"
+                      }
+                    >
+                      {link.revoked_at
+                        ? "Revoked"
+                        : expired
+                        ? "Expired"
+                        : "Active"}
+                    </span>
 
                     {!inactive && (
                       <button
-                        className="revoke-button"
+                        type="button"
+                        className="tracking-revoke-button"
+                        onClick={() =>
+                          revokeLink(link.id)
+                        }
                         disabled={busy}
-                        onClick={() => revokeLink(link.id)}
-                        title="Revoke link"
                         aria-label="Revoke tracking link"
                       >
-                        <Trash2 size={17} />
+                        <Trash2 size={16} />
                       </button>
                     )}
                   </div>
@@ -745,37 +1006,42 @@ function TrackingLinkModal({ job, onClose }) {
             </div>
           )}
         </div>
-
-        <p className="tracking-security-note">
-          <ShieldCheck size={16} />
-          Anyone with an active link can view the published
-          repair overview. Only share it with the intended customer.
-        </p>
       </div>
     </div>
   );
 }
 
-function Dashboard({ session, shop, onSignOut }) {
+function Workspace({
+  session,
+  shop,
+  onSignOut,
+}) {
+  const [page, setPage] = useState("overview");
   const [jobs, setJobs] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingJobs, setLoadingJobs] =
+    useState(true);
+  const [selectedJobId, setSelectedJobId] =
+    useState(null);
+  const [showNewJob, setShowNewJob] =
+    useState(false);
+  const [trackingJob, setTrackingJob] =
+    useState(null);
   const [error, setError] = useState("");
-  const [query, setQuery] = useState("");
-  const [showNewJob, setShowNewJob] = useState(false);
-  const [trackingJob, setTrackingJob] = useState(null);
-  const [savingId, setSavingId] = useState(null);
 
   useEffect(() => {
     let active = true;
 
     async function loadJobs() {
-      setLoading(true);
+      setLoadingJobs(true);
+      setError("");
 
       const { data, error } = await supabase
         .from("repair_jobs")
         .select("*")
         .eq("shop_id", shop.id)
-        .order("created_at", { ascending: false });
+        .order("created_at", {
+          ascending: false,
+        });
 
       if (!active) return;
 
@@ -785,7 +1051,7 @@ function Dashboard({ session, shop, onSignOut }) {
         setJobs(data ?? []);
       }
 
-      setLoading(false);
+      setLoadingJobs(false);
     }
 
     loadJobs();
@@ -795,67 +1061,38 @@ function Dashboard({ session, shop, onSignOut }) {
     };
   }, [shop.id]);
 
-  const stats = useMemo(
-    () => ({
-      total: jobs.length,
-      active: jobs.filter(
-        (job) =>
-          !["ready", "delivered"].includes(job.status)
-      ).length,
-      ready: jobs.filter(
-        (job) => job.status === "ready"
-      ).length,
-      completed: jobs.filter(
-        (job) => job.status === "delivered"
-      ).length,
-    }),
-    [jobs]
+  const selectedJob = jobs.find(
+    (job) => job.id === selectedJobId
   );
 
-  const filtered = useMemo(() => {
-    const search = query.toLowerCase();
+  function openRepair(job) {
+    setSelectedJobId(job.id);
+    setPage("repair");
+  }
 
-    return jobs.filter((job) => {
-      const text = [
-        job.customer_name,
-        job.vehicle_year,
-        job.vehicle_make,
-        job.vehicle_model,
-        stageName(job.status),
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
+  function updateJob(updatedJob) {
+    setJobs((previous) =>
+      previous.map((job) =>
+        job.id === updatedJob.id
+          ? updatedJob
+          : job
+      )
+    );
+  }
 
-      return text.includes(search);
-    });
-  }, [jobs, query]);
+  function createJob(job) {
+    setJobs((previous) => [
+      job,
+      ...previous,
+    ]);
 
-  async function changeStatus(job, status) {
-    if (status === job.status) return;
+    setShowNewJob(false);
+    openRepair(job);
+  }
 
-    setSavingId(job.id);
-    setError("");
-
-    const { data, error } = await supabase
-      .from("repair_jobs")
-      .update({ status })
-      .eq("id", job.id)
-      .eq("shop_id", shop.id)
-      .select()
-      .single();
-
-    if (error) {
-      setError(error.message);
-    } else {
-      setJobs((previous) =>
-        previous.map((item) =>
-          item.id === job.id ? data : item
-        )
-      );
-    }
-
-    setSavingId(null);
+  function navigate(nextPage) {
+    setSelectedJobId(null);
+    setPage(nextPage);
   }
 
   return (
@@ -864,28 +1101,67 @@ function Dashboard({ session, shop, onSignOut }) {
         <Brand />
 
         <div className="sidebar-group">
-          <span className="sidebar-caption">WORKSPACE</span>
+          <span className="sidebar-caption">
+            WORKSPACE
+          </span>
 
-          <div className="sidebar-link active">
-            <CarFront size={19} />
+          <button
+            type="button"
+            className={`sidebar-link ${
+              page === "overview" ||
+              page === "repair"
+                ? "active"
+                : ""
+            }`}
+            onClick={() =>
+              navigate("overview")
+            }
+          >
+            <Wrench size={18} />
             Overview
-          </div>
+          </button>
+
+          <button
+            type="button"
+            className={`sidebar-link ${
+              page === "team"
+                ? "active"
+                : ""
+            }`}
+            onClick={() =>
+              navigate("team")
+            }
+          >
+            <Users size={18} />
+            Team
+          </button>
         </div>
 
         <div className="sidebar-bottom">
           <div className="shop-identity">
             <div className="shop-avatar">
-              {shop.name.charAt(0).toUpperCase()}
+              {shop.name
+                ?.charAt(0)
+                ?.toUpperCase() || "M"}
             </div>
 
             <div>
-              <strong>{shop.name}</strong>
-              <small>SHOP WORKSPACE</small>
+              <strong>
+                {shop.name}
+              </strong>
+
+              <small>
+                SHOP WORKSPACE
+              </small>
             </div>
           </div>
 
-          <button className="logout" onClick={onSignOut}>
-            <LogOut size={17} />
+          <button
+            type="button"
+            className="logout"
+            onClick={onSignOut}
+          >
+            <LogOut size={16} />
             Sign out
           </button>
         </div>
@@ -894,7 +1170,14 @@ function Dashboard({ session, shop, onSignOut }) {
       <div className="workspace">
         <header className="workspace-header">
           <div className="workspace-breadcrumb">
-            WORKSPACE <span>/</span> OVERVIEW
+            MOOVIO
+            <span>/</span>
+
+            {page === "overview"
+              ? "OVERVIEW"
+              : page === "team"
+              ? "TEAM"
+              : "REPAIR DETAILS"}
           </div>
 
           <div className="user-pill">
@@ -903,206 +1186,67 @@ function Dashboard({ session, shop, onSignOut }) {
           </div>
         </header>
 
-        <main className="dashboard-main">
-          <div className="dashboard-heading">
-            <div>
-              <span className="eyebrow">
-                YOUR SHOP, AT A GLANCE.
-              </span>
-
-              <h1>
-                Good to see you<span>.</span>
-              </h1>
-
-              <p>Here's what's happening at {shop.name}.</p>
-            </div>
-
-            <button
-              className="primary-button new-job-button"
-              onClick={() => setShowNewJob(true)}
-            >
-              <CirclePlus size={19} />
-              New repair
-            </button>
+        {error && (
+          <div
+            className="form-message"
+            role="alert"
+          >
+            {error}
           </div>
+        )}
 
-          <div className="stats-grid">
-            {[
-              ["Total repairs", stats.total, CarFront],
-              ["In progress", stats.active, Wrench],
-              ["Ready for pickup", stats.ready, Clock3],
-              ["Delivered", stats.completed, Check],
-            ].map(([label, value, Icon], index) => (
-              <div className="stat-card" key={label}>
-                <div className="stat-top">
-                  <span>{label}</span>
-                  <Icon size={19} />
-                </div>
+        {page === "overview" && (
+          <Dashboard
+            shop={shop}
+            jobs={jobs}
+            setJobs={setJobs}
+            loading={loadingJobs}
+            onNewJob={() =>
+              setShowNewJob(true)
+            }
+            onOpenRepair={openRepair}
+            onTracking={setTrackingJob}
+          />
+        )}
 
-                <strong>{value}</strong>
+        {page === "repair" &&
+          selectedJob && (
+            <RepairDetails
+              job={selectedJob}
+              shop={shop}
+              user={session.user}
+              onBack={() =>
+                navigate("overview")
+              }
+              onUpdated={updateJob}
+            />
+          )}
 
-                <span className="stat-index">
-                  0{index + 1} / LIVE
-                </span>
-              </div>
-            ))}
-          </div>
-
-          <div className="repairs-section">
-            <div className="repairs-heading">
-              <div>
-                <span className="eyebrow">
-                  THE WORK IN MOTION
-                </span>
-
-                <h2>
-                  Repair jobs <span>({jobs.length})</span>
-                </h2>
-              </div>
-
-              <div className="search-field">
-                <Search size={18} />
-
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search repairs..."
-                  aria-label="Search repairs"
-                />
-              </div>
-            </div>
-
-            {error && (
-              <div className="form-message" role="alert">
-                {error}
-              </div>
-            )}
-
-            {loading ? (
-              <div className="empty-state">
-                <LoaderCircle size={28} />
-                <p>Loading your shop's repairs...</p>
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-icon">
-                  <CarFront size={32} />
-                </div>
-
-                <h3>
-                  {query ? "No matching repairs." : "A clean slate."}
-                </h3>
-
-                <p>
-                  {query
-                    ? "Try a different search."
-                    : "Your first repair job is one click away."}
-                </p>
-
-                {!query && (
-                  <button
-                    className="outline-button"
-                    onClick={() => setShowNewJob(true)}
-                  >
-                    Add your first repair
-                    <ArrowUpRight size={17} />
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="jobs-list">
-                <div className="jobs-list-header">
-                  <span>VEHICLE / CUSTOMER</span>
-                  <span>CREATED</span>
-                  <span>STATUS</span>
-                  <span>CUSTOMER ACCESS</span>
-                </div>
-
-                {filtered.map((job) => (
-                  <div className="job-row" key={job.id}>
-                    <div className="job-vehicle">
-                      <div className="vehicle-icon">
-                        <CarFront size={22} />
-                      </div>
-
-                      <div>
-                        <strong>
-                          {[
-                            job.vehicle_year,
-                            job.vehicle_make,
-                            job.vehicle_model,
-                          ]
-                            .filter(Boolean)
-                            .join(" ")}
-                        </strong>
-
-                        <small>{job.customer_name}</small>
-                      </div>
-                    </div>
-
-                    <div className="job-date">
-                      {new Date(
-                        job.created_at
-                      ).toLocaleDateString()}
-                    </div>
-
-                    <div className="status-wrap">
-                      <select
-                        className={`status-select status-${job.status}`}
-                        aria-label={`Status for ${job.vehicle_make} ${job.vehicle_model}`}
-                        value={job.status}
-                        disabled={savingId === job.id}
-                        onChange={(e) =>
-                          changeStatus(job, e.target.value)
-                        }
-                      >
-                        {STAGES.map(([value, label]) => (
-                          <option key={value} value={value}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
-
-                      <ChevronDown size={14} />
-                    </div>
-
-                    <button
-                      className="customer-link-button"
-                      onClick={() => setTrackingJob(job)}
-                    >
-                      <Link2 size={16} />
-                      Manage link
-                      <ArrowUpRight size={15} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="dashboard-foot">
-            <ShieldCheck size={16} />
-            Your shop data is protected by workspace access rules.
-          </div>
-        </main>
+        {page === "team" && (
+          <Team
+            shop={shop}
+            user={session.user}
+          />
+        )}
       </div>
 
       {showNewJob && (
         <NewJobModal
           shopId={shop.id}
           userId={session.user.id}
-          onClose={() => setShowNewJob(false)}
-          onCreated={(job) => {
-            setJobs((previous) => [job, ...previous]);
-            setShowNewJob(false);
-          }}
+          onClose={() =>
+            setShowNewJob(false)
+          }
+          onCreated={createJob}
         />
       )}
 
       {trackingJob && (
         <TrackingLinkModal
           job={trackingJob}
-          onClose={() => setTrackingJob(null)}
+          onClose={() =>
+            setTrackingJob(null)
+          }
         />
       )}
     </div>
@@ -1110,26 +1254,39 @@ function Dashboard({ session, shop, onSignOut }) {
 }
 
 function ShopApp() {
-  const [session, setSession] = useState(null);
-  const [shop, setShop] = useState(null);
-  const [checking, setChecking] = useState(true);
-  const [error, setError] = useState("");
+  const [session, setSession] =
+    useState(null);
+  const [shop, setShop] =
+    useState(null);
+  const [checking, setChecking] =
+    useState(true);
+  const [error, setError] =
+    useState("");
+  const [invitationError, setInvitationError] =
+    useState("");
 
   useEffect(() => {
     let active = true;
 
-    supabase.auth.getSession().then(({ data, error }) => {
-      if (!active) return;
+    supabase.auth
+      .getSession()
+      .then(({ data, error }) => {
+        if (!active) return;
 
-      if (error) setError(error.message);
-      setSession(data.session);
-      setChecking(false);
-    });
+        if (error) {
+          setError(error.message);
+        }
+
+        setSession(data.session);
+        setChecking(false);
+      });
 
     const { data: listener } =
       supabase.auth.onAuthStateChange(
         (_event, nextSession) => {
-          setSession(nextSession);
+          if (active) {
+            setSession(nextSession);
+          }
         }
       );
 
@@ -1144,24 +1301,72 @@ function ShopApp() {
 
     setShop(null);
     setError("");
+    setInvitationError("");
 
-    if (!session) return;
+    if (!session) {
+      setChecking(false);
+      return;
+    }
 
     setChecking(true);
 
     async function loadShop() {
-      const { data, error } = await supabase
-        .from("shops")
-        .select("id, name")
-        .order("created_at", { ascending: true })
+      if (
+        session.user.email_confirmed_at
+      ) {
+        const { error: claimError } =
+          await supabase.rpc(
+            "claim_team_invitations"
+          );
+
+        if (claimError && active) {
+          setInvitationError(
+            claimError.message
+          );
+        }
+      }
+
+      const {
+        data: memberships,
+        error: memberError,
+      } = await supabase
+        .from("shop_members")
+        .select("shop_id")
+        .eq("user_id", session.user.id)
         .limit(1);
 
       if (!active) return;
 
-      if (error) {
-        setError(error.message);
+      if (memberError) {
+        setError(memberError.message);
+        setChecking(false);
+        return;
+      }
+
+      if (!memberships?.length) {
+        setShop(null);
+        setChecking(false);
+        return;
+      }
+
+      const {
+        data: shopData,
+        error: shopError,
+      } = await supabase
+        .from("shops")
+        .select("id, name")
+        .eq(
+          "id",
+          memberships[0].shop_id
+        )
+        .single();
+
+      if (!active) return;
+
+      if (shopError) {
+        setError(shopError.message);
       } else {
-        setShop(data?.[0] ?? null);
+        setShop(shopData);
       }
 
       setChecking(false);
@@ -1172,26 +1377,58 @@ function ShopApp() {
     return () => {
       active = false;
     };
-  }, [session?.user?.id]);
+  }, [
+    session?.user?.id,
+    session?.user?.email_confirmed_at,
+  ]);
 
   async function reloadShop() {
     setChecking(true);
     setError("");
 
-    const { data, error } = await supabase
-      .from("shops")
-      .select("id, name")
-      .order("created_at", { ascending: true })
+    const {
+      data: memberships,
+      error: memberError,
+    } = await supabase
+      .from("shop_members")
+      .select("shop_id")
+      .eq("user_id", session.user.id)
       .limit(1);
 
-    if (error) setError(error.message);
-    else setShop(data?.[0] ?? null);
+    if (memberError) {
+      setError(memberError.message);
+      setChecking(false);
+      return;
+    }
+
+    if (!memberships?.length) {
+      setShop(null);
+      setChecking(false);
+      return;
+    }
+
+    const { data, error } =
+      await supabase
+        .from("shops")
+        .select("id, name")
+        .eq(
+          "id",
+          memberships[0].shop_id
+        )
+        .single();
+
+    if (error) {
+      setError(error.message);
+    } else {
+      setShop(data);
+    }
 
     setChecking(false);
   }
 
   async function signOut() {
-    const { error } = await supabase.auth.signOut();
+    const { error } =
+      await supabase.auth.signOut();
 
     if (error) {
       setError(error.message);
@@ -1205,7 +1442,9 @@ function ShopApp() {
     return (
       <div className="loading-screen">
         <Brand />
-        <span>GETTING THINGS MOOVING...</span>
+        <span>
+          GETTING THINGS MOOVING...
+        </span>
       </div>
     );
   }
@@ -1214,17 +1453,28 @@ function ShopApp() {
     return (
       <div className="loading-screen">
         <Brand />
-        <p role="alert">{error}</p>
+
+        <p role="alert">
+          {error}
+        </p>
 
         <button
+          type="button"
           className="outline-button"
-          onClick={() => window.location.reload()}
+          onClick={() =>
+            window.location.reload()
+          }
         >
-          Retry <ArrowRight size={16} />
+          Retry
+          <ArrowRight size={16} />
         </button>
 
         {session && (
-          <button className="text-button" onClick={signOut}>
+          <button
+            type="button"
+            className="text-button"
+            onClick={signOut}
+          >
             Sign out
           </button>
         )}
@@ -1233,15 +1483,27 @@ function ShopApp() {
   }
 
   if (!session) {
-    return <AuthScreen onSession={setSession} />;
+    return (
+      <AuthScreen
+        onSession={setSession}
+      />
+    );
   }
 
   if (!shop) {
-    return <Onboarding onCreated={reloadShop} />;
+    return (
+      <Onboarding
+        onCreated={reloadShop}
+        onSignOut={signOut}
+        invitationError={
+          invitationError
+        }
+      />
+    );
   }
 
   return (
-    <Dashboard
+    <Workspace
       session={session}
       shop={shop}
       onSignOut={signOut}
@@ -1249,31 +1511,36 @@ function ShopApp() {
   );
 }
 
-/*
- * PUBLIC ROUTING
- *
- * Customer routes render independently of shop authentication.
- * Access to repair data is checked by the Supabase RPC.
- */
-
 export default function App() {
-  const path = window.location.pathname;
+  const path =
+    window.location.pathname;
 
   const trackingMatch = path.match(
     /^\/track\/([0-9a-f]{64})\/?$/
   );
 
   if (trackingMatch) {
-    return <CustomerTracking token={trackingMatch[1]} />;
+    return (
+      <CustomerTracking
+        token={trackingMatch[1]}
+      />
+    );
   }
 
-  if (path.startsWith("/track/")) {
+  if (
+    path.startsWith("/track/")
+  ) {
     return (
       <div className="loading-screen">
         <Brand />
-        <h2>Tracking link unavailable.</h2>
+
+        <h2>
+          Tracking link unavailable.
+        </h2>
+
         <p>
-          Check the link you received from your repair shop.
+          Check the link you received
+          from your repair shop.
         </p>
       </div>
     );
