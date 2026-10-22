@@ -16,6 +16,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
+
 import { supabase } from "./lib/supabase";
 import CustomerTracking from "./CustomerTracking";
 import Dashboard from "./pages/Dashboard";
@@ -31,6 +32,8 @@ const EMPTY_JOB = {
   description: "",
   estimated_completion: "",
 };
+
+const OTP_LENGTH = 8;
 
 function Brand() {
   return (
@@ -52,46 +55,153 @@ function AuthScreen({ onSession }) {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [verificationEmail, setVerificationEmail] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
 
   function switchMode(nextMode, isTeam = false) {
     setMode(nextMode);
     setTeamSignup(isTeam);
     setMessage("");
+    setVerificationCode("");
   }
 
   async function submit(event) {
     event.preventDefault();
+    if (busy) return;
+
     setBusy(true);
     setMessage("");
 
     const address = email.trim().toLowerCase();
 
     try {
-      const result =
-        mode === "login"
-          ? await supabase.auth.signInWithPassword({
-              email: address,
-              password,
-            })
-          : await supabase.auth.signUp({
-              email: address,
-              password,
-              options: {
-                emailRedirectTo: window.location.origin,
-              },
-            });
+      if (mode === "login") {
+        const { data, error } =
+          await supabase.auth.signInWithPassword({
+            email: address,
+            password,
+          });
 
-      if (result.error) {
-        setMessage(result.error.message);
-      } else if (result.data.session) {
-        onSession(result.data.session);
+        if (error) {
+          const unconfirmed =
+            error.message?.toLowerCase().includes(
+              "email not confirmed"
+            );
+
+          if (unconfirmed) {
+            setVerificationEmail(address);
+            setVerificationCode("");
+            setMode("verify");
+            setMessage(
+              "Your email hasn't been verified yet. Enter the code from your email, or request another."
+            );
+            return;
+          }
+
+          throw error;
+        }
+
+        if (data.session) {
+          onSession(data.session);
+        }
+
+        return;
+      }
+
+      const { data, error } =
+        await supabase.auth.signUp({
+          email: address,
+          password,
+          options: {
+            emailRedirectTo: window.location.origin,
+          },
+        });
+
+      if (error) throw error;
+
+      if (data.session) {
+        onSession(data.session);
+        return;
+      }
+
+      setVerificationEmail(address);
+      setVerificationCode("");
+      setMode("verify");
+      setMessage("");
+    } catch (error) {
+      setMessage(
+        error.message || "Something went wrong."
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verifyCode(event) {
+    event.preventDefault();
+    if (busy) return;
+
+    const code = verificationCode.trim();
+
+    if (!new RegExp(`^\\d{${OTP_LENGTH}}$`).test(code)) {
+      setMessage(
+        `Enter the ${OTP_LENGTH}-digit code from your email.`
+      );
+      return;
+    }
+
+    setBusy(true);
+    setMessage("");
+
+    try {
+      const { data, error } =
+        await supabase.auth.verifyOtp({
+          email: verificationEmail,
+          token: code,
+          type: "signup",
+        });
+
+      if (error) throw error;
+
+      if (data.session) {
+        onSession(data.session);
       } else {
+        setMode("login");
         setMessage(
-          "Check your email to verify your account, then sign in."
+          "Email verified! Sign in to continue."
         );
       }
     } catch (error) {
-      setMessage(error.message || "Something went wrong.");
+      setMessage(
+        error.message || "Verification failed."
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resendCode() {
+    if (!verificationEmail || busy) return;
+
+    setBusy(true);
+    setMessage("");
+
+    try {
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: verificationEmail,
+      });
+
+      if (error) throw error;
+
+      setVerificationCode("");
+      setMessage(
+        "A new verification code has been sent. Check your inbox."
+      );
+    } catch (error) {
+      setMessage(
+        error.message || "Could not resend the code."
+      );
     } finally {
       setBusy(false);
     }
@@ -137,7 +247,9 @@ function AuthScreen({ onSession }) {
           </div>
 
           <h2>
-            {mode === "login"
+            {mode === "verify"
+              ? "Verify your email."
+              : mode === "login"
               ? "Welcome back."
               : teamSignup
               ? "Join your team."
@@ -145,144 +257,269 @@ function AuthScreen({ onSession }) {
           </h2>
 
           <p className="subtle">
-            {mode === "login"
+            {mode === "verify"
+              ? `Enter the ${OTP_LENGTH}-digit verification code sent to your email.`
+              : mode === "login"
               ? "Sign in to your shop workspace."
               : teamSignup
               ? "Use the email your shop invited."
               : "Create your account to start managing repairs."}
           </p>
 
-          <form
-            className="form-stack"
-            onSubmit={submit}
-          >
-            <label>
-              Email address
-
-              <input
-                type="email"
-                required
-                autoComplete="email"
-                placeholder="you@yourshop.com"
-                value={email}
-                onChange={(event) =>
-                  setEmail(event.target.value)
-                }
-              />
-            </label>
-
-            <label>
-              Password
-
-              <input
-                type="password"
-                required
-                minLength={6}
-                autoComplete={
-                  mode === "login"
-                    ? "current-password"
-                    : "new-password"
-                }
-                placeholder="At least 6 characters"
-                value={password}
-                onChange={(event) =>
-                  setPassword(event.target.value)
-                }
-              />
-            </label>
-
-            {message && (
+          {mode === "verify" ? (
+            <>
               <div
-                className="form-message"
-                role="status"
-              >
-                {message}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              className="primary-button"
-              disabled={busy}
-            >
-              {busy
-                ? "Please wait..."
-                : mode === "login"
-                ? "Sign in"
-                : "Create account"}
-
-              <ArrowRight size={18} />
-            </button>
-          </form>
-
-          <div
-            className="auth-account-links"
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: "14px",
-              width: "100%",
-              marginTop: "22px",
-            }}
-          >
-            <button
-              type="button"
-              className="text-button"
-              style={{
-                display: "block",
-                width: "fit-content",
-                margin: 0,
-                padding: "4px 0",
-                textAlign: "center",
-                lineHeight: 1.5,
-              }}
-              onClick={() =>
-                switchMode(
-                  mode === "login"
-                    ? "signup"
-                    : "login"
-                )
-              }
-            >
-              {mode === "login"
-                ? "New to Moovio? Create an account"
-                : "Already have an account? Sign in"}
-            </button>
-
-            {!(teamSignup && mode === "signup") && (
-              <button
-                type="button"
-                className="text-button team-signup-link"
                 style={{
-                  display: "block",
-                  width: "fit-content",
-                  margin: 0,
-                  padding: "4px 0",
-                  textAlign: "center",
-                  lineHeight: 1.5,
+                  marginTop: 28,
+                  marginBottom: 24,
+                  padding: "16px 18px",
+                  border: "1px solid rgba(29,146,232,.3)",
+                  borderRadius: 12,
+                  background: "rgba(29,146,232,.07)",
                 }}
-                onClick={() =>
-                  switchMode("signup", true)
-                }
               >
-                Are you a team member?
-              </button>
-            )}
-          </div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    letterSpacing: 1.5,
+                    color: "#1D92E8",
+                    marginBottom: 8,
+                  }}
+                >
+                  VERIFICATION CODE SENT
+                </div>
 
-          {teamSignup && mode === "signup" && (
-            <p
-              className="team-auth-hint"
-              style={{
-                marginTop: "18px",
-                textAlign: "center",
-                lineHeight: 1.7,
-              }}
-            >
-              Use the email your shop added.
-              Verify it before joining.
-            </p>
+                <div
+                  style={{
+                    fontSize: 14,
+                    overflowWrap: "anywhere",
+                  }}
+                >
+                  {verificationEmail}
+                </div>
+              </div>
+
+              <form
+                className="form-stack"
+                onSubmit={verifyCode}
+              >
+                <label>
+                  Verification code
+
+                  <input
+                    type="text"
+                    required
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={OTP_LENGTH}
+                    pattern="[0-9]{8}"
+                    placeholder="00000000"
+                    value={verificationCode}
+                    onChange={(event) =>
+                      setVerificationCode(
+                        event.target.value
+                          .replace(/\D/g, "")
+                          .slice(0, OTP_LENGTH)
+                      )
+                    }
+                    style={{
+                      textAlign: "center",
+                      fontSize: 25,
+                      fontWeight: 700,
+                      letterSpacing: 5,
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  />
+                </label>
+
+                {message && (
+                  <div
+                    className="form-message"
+                    role="status"
+                  >
+                    {message}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  className="primary-button"
+                  disabled={
+                    busy ||
+                    verificationCode.length !== OTP_LENGTH
+                  }
+                >
+                  {busy
+                    ? "Verifying..."
+                    : "Verify email"}
+
+                  <ArrowRight size={18} />
+                </button>
+              </form>
+
+              <div
+                className="auth-account-links"
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 14,
+                  marginTop: 22,
+                }}
+              >
+                <button
+                  type="button"
+                  className="text-button"
+                  disabled={busy}
+                  onClick={resendCode}
+                >
+                  Didn't get the code? Resend it
+                </button>
+
+                <button
+                  type="button"
+                  className="text-button"
+                  disabled={busy}
+                  onClick={() => switchMode("login")}
+                >
+                  Back to sign in
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <form
+                className="form-stack"
+                onSubmit={submit}
+              >
+                <label>
+                  Email address
+
+                  <input
+                    type="email"
+                    required
+                    autoComplete="email"
+                    placeholder="you@yourshop.com"
+                    value={email}
+                    onChange={(event) =>
+                      setEmail(event.target.value)
+                    }
+                  />
+                </label>
+
+                <label>
+                  Password
+
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    autoComplete={
+                      mode === "login"
+                        ? "current-password"
+                        : "new-password"
+                    }
+                    placeholder="At least 6 characters"
+                    value={password}
+                    onChange={(event) =>
+                      setPassword(event.target.value)
+                    }
+                  />
+                </label>
+
+                {message && (
+                  <div
+                    className="form-message"
+                    role="status"
+                  >
+                    {message}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  className="primary-button"
+                  disabled={busy}
+                >
+                  {busy
+                    ? "Please wait..."
+                    : mode === "login"
+                    ? "Sign in"
+                    : "Create account"}
+
+                  <ArrowRight size={18} />
+                </button>
+              </form>
+
+              <div
+                className="auth-account-links"
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 14,
+                  width: "100%",
+                  marginTop: 22,
+                }}
+              >
+                <button
+                  type="button"
+                  className="text-button"
+                  style={{
+                    display: "block",
+                    width: "fit-content",
+                    margin: 0,
+                    padding: "4px 0",
+                    textAlign: "center",
+                    lineHeight: 1.5,
+                  }}
+                  onClick={() =>
+                    switchMode(
+                      mode === "login" ? "signup" : "login"
+                    )
+                  }
+                >
+                  {mode === "login"
+                    ? "New to Moovio? Create an account"
+                    : "Already have an account? Sign in"}
+                </button>
+
+                {!(teamSignup && mode === "signup") && (
+                  <button
+                    type="button"
+                    className="text-button team-signup-link"
+                    style={{
+                      display: "block",
+                      width: "fit-content",
+                      margin: 0,
+                      padding: "4px 0",
+                      textAlign: "center",
+                      lineHeight: 1.5,
+                    }}
+                    onClick={() =>
+                      switchMode("signup", true)
+                    }
+                  >
+                    Are you a team member?
+                  </button>
+                )}
+              </div>
+
+              {teamSignup && mode === "signup" && (
+                <p
+                  className="team-auth-hint"
+                  style={{
+                    marginTop: 18,
+                    textAlign: "center",
+                    lineHeight: 1.7,
+                  }}
+                >
+                  Use the email your shop added.
+                  Verify it before joining.
+                </p>
+              )}
+            </>
           )}
         </div>
 
@@ -312,9 +549,7 @@ function Onboarding({
     try {
       const { error } = await supabase.rpc(
         "create_shop",
-        {
-          shop_name: name.trim(),
-        }
+        { shop_name: name.trim() }
       );
 
       if (error) throw error;
@@ -350,10 +585,7 @@ function Onboarding({
         </p>
 
         {invitationError && (
-          <div
-            className="form-message"
-            role="alert"
-          >
+          <div className="form-message" role="alert">
             Team invitation: {invitationError}
           </div>
         )}
@@ -378,10 +610,7 @@ function Onboarding({
           </label>
 
           {error && (
-            <div
-              className="form-message"
-              role="alert"
-            >
+            <div className="form-message" role="alert">
               {error}
             </div>
           )}
@@ -438,15 +667,12 @@ function NewJobModal({
         .insert({
           shop_id: shopId,
           created_by: userId,
-          customer_name:
-            form.customer_name.trim(),
+          customer_name: form.customer_name.trim(),
           vehicle_year: form.vehicle_year
             ? Number(form.vehicle_year)
             : null,
-          vehicle_make:
-            form.vehicle_make.trim(),
-          vehicle_model:
-            form.vehicle_model.trim(),
+          vehicle_make: form.vehicle_make.trim(),
+          vehicle_model: form.vehicle_model.trim(),
           description:
             form.description.trim() || null,
           estimated_completion:
@@ -606,10 +832,7 @@ function NewJobModal({
           </label>
 
           {error && (
-            <div
-              className="form-message"
-              role="alert"
-            >
+            <div className="form-message" role="alert">
               {error}
             </div>
           )}
@@ -630,10 +853,7 @@ function NewJobModal({
   );
 }
 
-function TrackingLinkModal({
-  job,
-  onClose,
-}) {
+function TrackingLinkModal({ job, onClose }) {
   const [links, setLinks] = useState([]);
   const [newUrl, setNewUrl] = useState("");
   const [loading, setLoading] = useState(true);
@@ -704,9 +924,7 @@ function TrackingLinkModal({
       const { data: token, error } =
         await supabase.rpc(
           "create_tracking_link",
-          {
-            target_job: job.id,
-          }
+          { target_job: job.id }
         );
 
       if (error) throw error;
@@ -725,10 +943,7 @@ function TrackingLinkModal({
 
   async function copyLink() {
     try {
-      await navigator.clipboard.writeText(
-        newUrl
-      );
-
+      await navigator.clipboard.writeText(newUrl);
       setNotice("Tracking link copied.");
     } catch {
       setNotice(
@@ -753,9 +968,7 @@ function TrackingLinkModal({
     try {
       const { error } = await supabase.rpc(
         "revoke_tracking_link",
-        {
-          target_link: linkId,
-        }
+        { target_link: linkId }
       );
 
       if (error) throw error;
@@ -774,18 +987,15 @@ function TrackingLinkModal({
     (link) =>
       !link.revoked_at &&
       (!link.expires_at ||
-        new Date(
-          link.expires_at
-        ).getTime() > Date.now())
+        new Date(link.expires_at).getTime() >
+          Date.now())
   ).length;
 
   return (
     <div
       className="modal-backdrop"
       onMouseDown={(event) => {
-        if (
-          event.target === event.currentTarget
-        ) {
+        if (event.target === event.currentTarget) {
           onClose();
         }
       }}
@@ -833,16 +1043,14 @@ function TrackingLinkModal({
                 .join(" ")}
             </strong>
 
-            <small>
-              {job.customer_name}
-            </small>
+            <small>{job.customer_name}</small>
           </div>
         </div>
 
         <p className="tracking-explanation">
-          Create a private link for your
-          customer to follow their vehicle's
-          repair progress without signing in.
+          Create a private link for your customer
+          to follow their vehicle's repair progress
+          without signing in.
         </p>
 
         <button
@@ -903,19 +1111,13 @@ function TrackingLinkModal({
         )}
 
         {error && (
-          <div
-            className="form-message"
-            role="alert"
-          >
+          <div className="form-message" role="alert">
             {error}
           </div>
         )}
 
         {notice && (
-          <div
-            className="form-message"
-            role="status"
-          >
+          <div className="form-message" role="status">
             {notice}
           </div>
         )}
@@ -923,9 +1125,7 @@ function TrackingLinkModal({
         <div className="tracking-links-section">
           <div className="tracking-links-heading">
             <strong>Existing links</strong>
-            <span>
-              {activeCount} active
-            </span>
+            <span>{activeCount} active</span>
           </div>
 
           {loading ? (
@@ -1146,13 +1346,8 @@ function Workspace({
             </div>
 
             <div>
-              <strong>
-                {shop.name}
-              </strong>
-
-              <small>
-                SHOP WORKSPACE
-              </small>
+              <strong>{shop.name}</strong>
+              <small>SHOP WORKSPACE</small>
             </div>
           </div>
 
@@ -1187,10 +1382,7 @@ function Workspace({
         </header>
 
         {error && (
-          <div
-            className="form-message"
-            role="alert"
-          >
+          <div className="form-message" role="alert">
             {error}
           </div>
         )}
@@ -1209,18 +1401,17 @@ function Workspace({
           />
         )}
 
-        {page === "repair" &&
-          selectedJob && (
-            <RepairDetails
-              job={selectedJob}
-              shop={shop}
-              user={session.user}
-              onBack={() =>
-                navigate("overview")
-              }
-              onUpdated={updateJob}
-            />
-          )}
+        {page === "repair" && selectedJob && (
+          <RepairDetails
+            job={selectedJob}
+            shop={shop}
+            user={session.user}
+            onBack={() =>
+              navigate("overview")
+            }
+            onUpdated={updateJob}
+          />
+        )}
 
         {page === "team" && (
           <Team
@@ -1254,14 +1445,10 @@ function Workspace({
 }
 
 function ShopApp() {
-  const [session, setSession] =
-    useState(null);
-  const [shop, setShop] =
-    useState(null);
-  const [checking, setChecking] =
-    useState(true);
-  const [error, setError] =
-    useState("");
+  const [session, setSession] = useState(null);
+  const [shop, setShop] = useState(null);
+  const [checking, setChecking] = useState(true);
+  const [error, setError] = useState("");
   const [invitationError, setInvitationError] =
     useState("");
 
@@ -1278,6 +1465,11 @@ function ShopApp() {
         }
 
         setSession(data.session);
+        setChecking(false);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setError(error.message);
         setChecking(false);
       });
 
@@ -1311,65 +1503,68 @@ function ShopApp() {
     setChecking(true);
 
     async function loadShop() {
-      if (
-        session.user.email_confirmed_at
-      ) {
-        const { error: claimError } =
-          await supabase.rpc(
-            "claim_team_invitations"
-          );
+      try {
+        if (session.user.email_confirmed_at) {
+          const { error: claimError } =
+            await supabase.rpc(
+              "claim_team_invitations"
+            );
 
-        if (claimError && active) {
-          setInvitationError(
-            claimError.message
+          if (claimError && active) {
+            setInvitationError(
+              claimError.message
+            );
+          }
+        }
+
+        const {
+          data: memberships,
+          error: memberError,
+        } = await supabase
+          .from("shop_members")
+          .select("shop_id")
+          .eq("user_id", session.user.id)
+          .limit(1);
+
+        if (!active) return;
+
+        if (memberError) {
+          setError(memberError.message);
+          return;
+        }
+
+        if (!memberships?.length) {
+          setShop(null);
+          return;
+        }
+
+        const {
+          data: shopData,
+          error: shopError,
+        } = await supabase
+          .from("shops")
+          .select("id, name")
+          .eq("id", memberships[0].shop_id)
+          .single();
+
+        if (!active) return;
+
+        if (shopError) {
+          setError(shopError.message);
+        } else {
+          setShop(shopData);
+        }
+      } catch (error) {
+        if (active) {
+          setError(
+            error.message || "Unable to load shop."
           );
         }
+      } finally {
+        if (active) {
+          setChecking(false);
+        }
       }
-
-      const {
-        data: memberships,
-        error: memberError,
-      } = await supabase
-        .from("shop_members")
-        .select("shop_id")
-        .eq("user_id", session.user.id)
-        .limit(1);
-
-      if (!active) return;
-
-      if (memberError) {
-        setError(memberError.message);
-        setChecking(false);
-        return;
-      }
-
-      if (!memberships?.length) {
-        setShop(null);
-        setChecking(false);
-        return;
-      }
-
-      const {
-        data: shopData,
-        error: shopError,
-      } = await supabase
-        .from("shops")
-        .select("id, name")
-        .eq(
-          "id",
-          memberships[0].shop_id
-        )
-        .single();
-
-      if (!active) return;
-
-      if (shopError) {
-        setError(shopError.message);
-      } else {
-        setShop(shopData);
-      }
-
-      setChecking(false);
     }
 
     loadShop();
@@ -1386,44 +1581,38 @@ function ShopApp() {
     setChecking(true);
     setError("");
 
-    const {
-      data: memberships,
-      error: memberError,
-    } = await supabase
-      .from("shop_members")
-      .select("shop_id")
-      .eq("user_id", session.user.id)
-      .limit(1);
+    try {
+      const {
+        data: memberships,
+        error: memberError,
+      } = await supabase
+        .from("shop_members")
+        .select("shop_id")
+        .eq("user_id", session.user.id)
+        .limit(1);
 
-    if (memberError) {
-      setError(memberError.message);
-      setChecking(false);
-      return;
-    }
+      if (memberError) throw memberError;
 
-    if (!memberships?.length) {
-      setShop(null);
-      setChecking(false);
-      return;
-    }
+      if (!memberships?.length) {
+        setShop(null);
+        return;
+      }
 
-    const { data, error } =
-      await supabase
-        .from("shops")
-        .select("id, name")
-        .eq(
-          "id",
-          memberships[0].shop_id
-        )
-        .single();
+      const { data, error } =
+        await supabase
+          .from("shops")
+          .select("id, name")
+          .eq("id", memberships[0].shop_id)
+          .single();
 
-    if (error) {
-      setError(error.message);
-    } else {
+      if (error) throw error;
+
       setShop(data);
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setChecking(false);
     }
-
-    setChecking(false);
   }
 
   async function signOut() {
@@ -1442,9 +1631,7 @@ function ShopApp() {
     return (
       <div className="loading-screen">
         <Brand />
-        <span>
-          GETTING THINGS MOOVING...
-        </span>
+        <span>GETTING THINGS MOOVING...</span>
       </div>
     );
   }
@@ -1454,9 +1641,7 @@ function ShopApp() {
       <div className="loading-screen">
         <Brand />
 
-        <p role="alert">
-          {error}
-        </p>
+        <p role="alert">{error}</p>
 
         <button
           type="button"
@@ -1495,9 +1680,7 @@ function ShopApp() {
       <Onboarding
         onCreated={reloadShop}
         onSignOut={signOut}
-        invitationError={
-          invitationError
-        }
+        invitationError={invitationError}
       />
     );
   }
@@ -1512,8 +1695,7 @@ function ShopApp() {
 }
 
 export default function App() {
-  const path =
-    window.location.pathname;
+  const path = window.location.pathname;
 
   const trackingMatch = path.match(
     /^\/track\/([0-9a-f]{64})\/?$/
@@ -1527,16 +1709,12 @@ export default function App() {
     );
   }
 
-  if (
-    path.startsWith("/track/")
-  ) {
+  if (path.startsWith("/track/")) {
     return (
       <div className="loading-screen">
         <Brand />
 
-        <h2>
-          Tracking link unavailable.
-        </h2>
+        <h2>Tracking link unavailable.</h2>
 
         <p>
           Check the link you received
