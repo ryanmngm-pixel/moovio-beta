@@ -22,6 +22,11 @@ import CustomerTracking from "./CustomerTracking";
 import Dashboard from "./pages/Dashboard";
 import RepairDetails from "./pages/RepairDetails";
 import Team from "./pages/Team";
+
+import Privacy from "./pages/Privacy";
+import BetaTerms from "./pages/BetaTerms";
+import BetaAgreement from "./components/BetaAgreement";
+
 import "./App.css";
 
 const EMPTY_JOB = {
@@ -306,7 +311,6 @@ function AuthScreen({ onSession }) {
               >
                 <label>
                   Verification code
-
                   <input
                     type="text"
                     required
@@ -353,7 +357,6 @@ function AuthScreen({ onSession }) {
                   {busy
                     ? "Verifying..."
                     : "Verify email"}
-
                   <ArrowRight size={18} />
                 </button>
               </form>
@@ -395,7 +398,6 @@ function AuthScreen({ onSession }) {
               >
                 <label>
                   Email address
-
                   <input
                     type="email"
                     required
@@ -410,7 +412,6 @@ function AuthScreen({ onSession }) {
 
                 <label>
                   Password
-
                   <input
                     type="password"
                     required
@@ -447,7 +448,6 @@ function AuthScreen({ onSession }) {
                     : mode === "login"
                     ? "Sign in"
                     : "Create account"}
-
                   <ArrowRight size={18} />
                 </button>
               </form>
@@ -553,7 +553,6 @@ function Onboarding({
       );
 
       if (error) throw error;
-
       await onCreated();
     } catch (error) {
       setError(error.message);
@@ -596,7 +595,6 @@ function Onboarding({
         >
           <label>
             Shop name
-
             <input
               required
               minLength={2}
@@ -622,7 +620,6 @@ function Onboarding({
             {busy
               ? "Creating..."
               : "Create my shop"}
-
             <ArrowRight size={18} />
           </button>
         </form>
@@ -682,7 +679,6 @@ function NewJobModal({
         .single();
 
       if (error) throw error;
-
       onCreated(data);
     } catch (error) {
       setError(error.message);
@@ -711,7 +707,6 @@ function NewJobModal({
             <span className="eyebrow">
               NEW REPAIR / 001
             </span>
-
             <h2 id="new-job-title">
               Add a vehicle.
             </h2>
@@ -733,7 +728,6 @@ function NewJobModal({
         >
           <label>
             Customer name
-
             <input
               required
               maxLength={120}
@@ -751,7 +745,6 @@ function NewJobModal({
           <div className="form-grid">
             <label>
               Year
-
               <input
                 type="number"
                 min="1900"
@@ -769,7 +762,6 @@ function NewJobModal({
 
             <label>
               Make
-
               <input
                 required
                 placeholder="Honda"
@@ -786,7 +778,6 @@ function NewJobModal({
 
           <label>
             Model
-
             <input
               required
               placeholder="Accord"
@@ -802,7 +793,6 @@ function NewJobModal({
 
           <label>
             Repair description
-
             <textarea
               rows={4}
               placeholder="Describe the damage and repairs..."
@@ -818,7 +808,6 @@ function NewJobModal({
 
           <label>
             Estimated completion
-
             <input
               type="date"
               value={form.estimated_completion}
@@ -844,7 +833,6 @@ function NewJobModal({
             {busy
               ? "Saving..."
               : "Create repair job"}
-
             <CirclePlus size={19} />
           </button>
         </form>
@@ -878,7 +866,6 @@ function TrackingLinkModal({ job, onClose }) {
     } else {
       setLinks(data ?? []);
     }
-
     setLoading(false);
   }
 
@@ -1011,7 +998,6 @@ function TrackingLinkModal({ job, onClose }) {
             <span className="eyebrow">
               CUSTOMER ACCESS
             </span>
-
             <h2 id="tracking-title">
               Tracking links.
             </h2>
@@ -1042,7 +1028,6 @@ function TrackingLinkModal({ job, onClose }) {
                 .filter(Boolean)
                 .join(" ")}
             </strong>
-
             <small>{job.customer_name}</small>
           </div>
         </div>
@@ -1060,7 +1045,6 @@ function TrackingLinkModal({ job, onClose }) {
           disabled={busy}
         >
           <Plus size={18} />
-
           {busy
             ? "Working..."
             : "Create new tracking link"}
@@ -1164,7 +1148,6 @@ function TrackingLinkModal({ job, onClose }) {
                           ? "Inactive link"
                           : "Active link"}
                       </strong>
-
                       <small>
                         Created{" "}
                         {new Date(
@@ -1285,7 +1268,6 @@ function Workspace({
       job,
       ...previous,
     ]);
-
     setShowNewJob(false);
     openRepair(job);
   }
@@ -1367,7 +1349,6 @@ function Workspace({
           <div className="workspace-breadcrumb">
             MOOVIO
             <span>/</span>
-
             {page === "overview"
               ? "OVERVIEW"
               : page === "team"
@@ -1441,6 +1422,171 @@ function Workspace({
         />
       )}
     </div>
+  );
+}
+
+// Added: beta agreement access gate.
+// Existing workspace code above is unchanged.
+function BetaWorkspaceGate({ session, shop, onSignOut }) {
+  const [status, setStatus] = useState("checking");
+  const [isOwner, setIsOwner] = useState(false);
+  const [error, setError] = useState("");
+
+  async function checkAgreement() {
+    setStatus("checking");
+    setError("");
+
+    try {
+      const { data: membership, error: memberError } = await supabase
+        .from("shop_members")
+        .select("role")
+        .eq("shop_id", shop.id)
+        .eq("user_id", session.user.id)
+        .single();
+
+      if (memberError) throw memberError;
+
+      setIsOwner(membership.role === "owner");
+
+      const { data: accepted, error: statusError } = await supabase.rpc(
+        "get_my_moovio_beta_status",
+        { p_shop_id: shop.id }
+      );
+
+      if (statusError) throw statusError;
+
+      setStatus(accepted === true ? "accepted" : "pending");
+    } catch (err) {
+      setError(err.message || "Unable to verify the beta agreement.");
+      setStatus("error");
+    }
+  }
+
+  useEffect(() => {
+    let active = true;
+
+    async function load() {
+      setStatus("checking");
+      setError("");
+
+      try {
+        const { data: membership, error: memberError } = await supabase
+          .from("shop_members")
+          .select("role")
+          .eq("shop_id", shop.id)
+          .eq("user_id", session.user.id)
+          .single();
+
+        if (memberError) throw memberError;
+
+        const { data: accepted, error: statusError } = await supabase.rpc(
+          "get_my_moovio_beta_status",
+          { p_shop_id: shop.id }
+        );
+
+        if (statusError) throw statusError;
+        if (!active) return;
+
+        setIsOwner(membership.role === "owner");
+        setStatus(accepted === true ? "accepted" : "pending");
+      } catch (err) {
+        if (!active) return;
+
+        setError(err.message || "Unable to verify the beta agreement.");
+        setStatus("error");
+      }
+    }
+
+    load();
+
+    return () => {
+      active = false;
+    };
+  }, [shop.id, session.user.id]);
+
+  if (status === "checking") {
+    return (
+      <div className="loading-screen">
+        <Brand />
+        <span>CHECKING SHOP AGREEMENTS...</span>
+      </div>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <div className="loading-screen">
+        <Brand />
+        <p role="alert">{error}</p>
+
+        <button
+          type="button"
+          className="outline-button"
+          onClick={checkAgreement}
+        >
+          Retry
+        </button>
+
+        <button
+          type="button"
+          className="text-button"
+          onClick={onSignOut}
+        >
+          Sign out
+        </button>
+      </div>
+    );
+  }
+
+  if (status === "pending") {
+    if (isOwner) {
+      return (
+        <BetaAgreement
+          shopId={shop.id}
+          shopName={shop.name}
+          onAccepted={checkAgreement}
+          onSignOut={onSignOut}
+        />
+      );
+    }
+
+    return (
+      <div className="loading-screen">
+        <Brand />
+
+        <h2>Waiting for your shop owner.</h2>
+
+        <p>
+          Your shop owner must accept the current
+          beta agreements before the team can
+          access Moovio.
+        </p>
+
+        <button
+          type="button"
+          className="outline-button"
+          onClick={checkAgreement}
+        >
+          Check again
+        </button>
+
+        <button
+          type="button"
+          className="text-button"
+          onClick={onSignOut}
+        >
+          Sign out
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <Workspace
+      session={session}
+      shop={shop}
+      onSignOut={onSignOut}
+    />
   );
 }
 
@@ -1640,7 +1786,6 @@ function ShopApp() {
     return (
       <div className="loading-screen">
         <Brand />
-
         <p role="alert">{error}</p>
 
         <button
@@ -1686,7 +1831,7 @@ function ShopApp() {
   }
 
   return (
-    <Workspace
+    <BetaWorkspaceGate
       session={session}
       shop={shop}
       onSignOut={signOut}
@@ -1696,6 +1841,15 @@ function ShopApp() {
 
 export default function App() {
   const path = window.location.pathname;
+
+  // Added: public legal pages.
+  if (path === "/privacy" || path === "/privacy/") {
+    return <Privacy />;
+  }
+
+  if (path === "/beta-terms" || path === "/beta-terms/") {
+    return <BetaTerms />;
+  }
 
   const trackingMatch = path.match(
     /^\/track\/([0-9a-f]{64})\/?$/
@@ -1713,9 +1867,7 @@ export default function App() {
     return (
       <div className="loading-screen">
         <Brand />
-
         <h2>Tracking link unavailable.</h2>
-
         <p>
           Check the link you received
           from your repair shop.

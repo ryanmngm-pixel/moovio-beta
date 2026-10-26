@@ -1,0 +1,360 @@
+
+.beta-agreement-page {
+  min-height: 100dvh;
+  padding: 32px clamp(18px, 5vw, 70px);
+  display: flex;
+  flex-direction: column;
+  background: #f6f7f9;
+  color: #191b22;
+  font-family: "DM Sans", sans-serif;
+}
+
+.beta-agreement-page * {
+  box-sizing: border-box;
+}
+
+.beta-agreement-header,
+.beta-agreement-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.beta-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #191b22;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 27px;
+  font-weight: 700;
+  letter-spacing: -1.7px;
+  text-decoration: none;
+}
+
+.beta-brand-dot {
+  color: #2563ff;
+}
+
+.beta-brand-icon {
+  position: relative;
+  display: block;
+  width: 29px;
+  height: 29px;
+  border-radius: 9px;
+  background: #2563ff;
+  transform: rotate(-8deg);
+  overflow: hidden;
+}
+
+.beta-brand-icon span {
+  position: absolute;
+  top: 8px;
+  left: 7px;
+  width: 15px;
+  height: 13px;
+  border: 5px solid white;
+  border-bottom: 0;
+  border-radius: 7px 7px 0 0;
+}
+
+.beta-header-label,
+.beta-agreement-footer {
+  color: #929aaa;
+  font-family: "DM Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.beta-agreement-card {
+  width: 100%;
+  max-width: 650px;
+  margin: 65px auto;
+  padding: clamp(25px, 5vw, 52px);
+  border: 1px solid #e8eaf0;
+  border-radius: 20px;
+  background: white;
+  box-shadow: 0 20px 65px rgba(20, 23, 33, 0.035);
+}
+
+.beta-intro-icon {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 27px;
+  border-radius: 14px;
+  background: #edf3ff;
+  color: #2563ff;
+}
+
+.beta-eyebrow {
+  color: #2563ff;
+  font-family: "DM Mono", monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 1.5px;
+}
+
+.beta-agreement-intro h1 {
+  margin: 18px 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: clamp(44px, 7vw, 67px);
+  font-weight: 700;
+  letter-spacing: -0.075em;
+  line-height: 1.03;
+}
+
+.beta-agreement-intro h1 span {
+  color: #2563ff;
+}
+
+.beta-agreement-intro p {
+  max-width: 490px;
+  margin: 0;
+  color: #828b9b;
+  font-size: 14px;
+  line-height: 1.9;
+}
+
+.beta-agreement-documents {
+  display: grid;
+  gap: 12px;
+  margin: 34px 0;
+}
+
+.beta-document-link {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 17px;
+  border: 1px solid #e8eaf0;
+  border-radius: 12px;
+  background: #fff;
+  color: #252b37;
+  text-decoration: none;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.beta-document-link:hover {
+  border-color: #b7caff;
+  background: #f8faff;
+}
+
+.beta-document-icon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 43px;
+  height: 43px;
+  border-radius: 10px;
+  background: #f0f4ff;
+  color: #2563ff;
+}
+
+.beta-document-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: 5px;
+}
+
+.beta-document-copy strong {
+  font-size: 13px;
+}
+
+.beta-document-copy small {
+  color: #929aaa;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.beta-document-link > svg {
+  flex-shrink: 0;
+  color: #929aaa;
+}
+
+.beta-agreement-section-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  margin-bottom: 17px;
+  padding-bottom: 13px;
+  border-bottom: 1px solid #e8eaf0;
+  color: #8d96a4;
+  font-family: "DM Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.beta-agreement-form {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.beta-check-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  padding: 15px;
+  border: 1px solid #e8eaf0;
+  border-radius: 11px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.beta-check-option:has(input:checked) {
+  border-color: #b9ccff;
+  background: #f8faff;
+}
+
+.beta-check-option input {
+  width: 17px;
+  height: 17px;
+  margin: 2px 0 0;
+  flex-shrink: 0;
+  accent-color: #2563ff;
+  cursor: pointer;
+}
+
+.beta-check-option > span {
+  color: #525d70;
+  font-size: 12px;
+  line-height: 1.85;
+}
+
+.beta-check-option a {
+  color: #2563ff;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.beta-agreement-error {
+  padding: 13px 15px;
+  border: 1px solid #fecaca;
+  border-radius: 9px;
+  background: #fff1f2;
+  color: #b42336;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.beta-agreement-submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 53px;
+  margin-top: 14px;
+  padding: 14px 20px;
+  border: 1px solid #2563ff;
+  border-radius: 10px;
+  background: #2563ff;
+  color: white;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.beta-agreement-submit:hover:not(:disabled) {
+  background: #164fe4;
+  transform: translateY(-1px);
+}
+
+.beta-agreement-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.beta-agreement-security {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 25px;
+  padding: 15px;
+  border-radius: 10px;
+  background: #f6f8fc;
+  color: #7e899b;
+  font-size: 11px;
+  line-height: 1.8;
+}
+
+.beta-agreement-security svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #2563ff;
+}
+
+.beta-agreement-signout {
+  display: block;
+  margin: 24px auto 0;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+  color: #8d96a4;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.beta-agreement-signout:hover {
+  color: #2563ff;
+}
+
+.beta-agreement-footer {
+  margin-top: auto;
+  padding-top: 20px;
+}
+
+@media (max-width: 600px) {
+  .beta-agreement-page {
+    padding: 22px 15px;
+  }
+
+  .beta-header-label {
+    font-size: 9px;
+  }
+
+  .beta-agreement-card {
+    margin: 35px auto;
+    padding: 25px 20px;
+    border-radius: 15px;
+  }
+
+  .beta-agreement-intro h1 {
+    font-size: clamp(43px, 11vw, 58px);
+  }
+
+  .beta-document-link {
+    padding: 13px;
+    gap: 11px;
+  }
+
+  .beta-document-icon {
+    width: 39px;
+    height: 39px;
+  }
+
+  .beta-check-option {
+    padding: 13px;
+  }
+
+  .beta-agreement-footer {
+    font-size: 9px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .beta-agreement-page *,
+  .beta-agreement-page *::before,
+  .beta-agreement-page *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

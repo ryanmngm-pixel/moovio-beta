@@ -8,6 +8,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { supabase } from "./lib/supabase";
+import MoovioAIChat from "./components/MoovioAIChat";
 import "./CustomerTracking.css";
 
 const stages = [
@@ -644,6 +645,8 @@ export default function CustomerTracking({ token }) {
         <span>POWERED BY MOOVIO</span>
         <span>LESS CALLING. MORE MOOVING.</span>
       </footer>
+
+      {repair && <MoovioAIChat repair={repair} token={token} />}
     </div>
   );
 }
