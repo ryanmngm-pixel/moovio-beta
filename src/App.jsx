@@ -27,6 +27,9 @@ import Privacy from "./pages/Privacy";
 import BetaTerms from "./pages/BetaTerms";
 import BetaAgreement from "./components/BetaAgreement";
 
+// Moovio Control
+import Control from "./pages/Control";
+
 import "./App.css";
 
 const EMPTY_JOB = {
@@ -311,6 +314,7 @@ function AuthScreen({ onSession }) {
               >
                 <label>
                   Verification code
+
                   <input
                     type="text"
                     required
@@ -398,6 +402,7 @@ function AuthScreen({ onSession }) {
               >
                 <label>
                   Email address
+
                   <input
                     type="email"
                     required
@@ -412,6 +417,7 @@ function AuthScreen({ onSession }) {
 
                 <label>
                   Password
+
                   <input
                     type="password"
                     required
@@ -595,6 +601,7 @@ function Onboarding({
         >
           <label>
             Shop name
+
             <input
               required
               minLength={2}
@@ -1841,6 +1848,11 @@ function ShopApp() {
 
 export default function App() {
   const path = window.location.pathname;
+
+  // Moovio Control — private platform administration.
+  if (path === "/control" || path === "/control/") {
+    return <Control />;
+  }
 
   // Added: public legal pages.
   if (path === "/privacy" || path === "/privacy/") {
